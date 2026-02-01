@@ -17,10 +17,6 @@ from pkgutil import extend_path
 
 __path__ = extend_path(__path__, __name__)
 
-# pelican.log has to be the first pelican module to be loaded
-# because logging.setLoggerClass has to be called before logging.getLogger
-from pelican.log import console, DEFAULT_LOG_HANDLER  # noqa: I001
-from pelican.log import init as init_logging
 from pelican.generators import (
     ArticlesGenerator,
     PagesGenerator,
@@ -28,6 +24,11 @@ from pelican.generators import (
     StaticGenerator,
     TemplatePagesGenerator,
 )
+
+# pelican.log has to be the first pelican module to be loaded
+# because logging.setLoggerClass has to be called before logging.getLogger
+from pelican.log import DEFAULT_LOG_HANDLER, console
+from pelican.log import init as init_logging
 from pelican.plugins import signals
 from pelican.plugins._utils import get_plugin_name, load_plugins
 from pelican.server import ComplexHTTPRequestHandler, RootedHTTPServer
@@ -255,7 +256,7 @@ class PrintSettings(argparse.Action):
         init_logging(name=__name__)
 
         try:
-            instance, settings = get_instance(namespace)
+            _, settings = get_instance(namespace)
         except Exception as e:
             logger.critical("%s", e.__class__.__name__, exc_info=True)
             console.print_exception()

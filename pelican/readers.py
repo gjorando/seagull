@@ -805,7 +805,7 @@ def parse_path_metadata(source_path, settings=None, process=None):
     """
     metadata = {}
     dirname, basename = os.path.split(source_path)
-    base, ext = os.path.splitext(basename)
+    base, _ = os.path.splitext(basename)
     subdir = os.path.basename(dirname)
     if settings:
         checks = []

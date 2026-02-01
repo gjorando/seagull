@@ -242,7 +242,7 @@ def get_settings_from_module(module: ModuleType | None = None) -> Settings:
 def get_settings_from_file(path: str) -> Settings:
     """Loads settings from a file path, returning a dict."""
 
-    name, ext = os.path.splitext(os.path.basename(path))
+    name, _ = os.path.splitext(os.path.basename(path))
     module = load_source(name, path)
     return get_settings_from_module(module)
 

@@ -203,16 +203,14 @@ def main():
 
     args = parser.parse_args()
 
-    print(
-        f"""Welcome to pelican-quickstart v{__version__}.
+    print(f"""Welcome to pelican-quickstart v{__version__}.
 
 This script will help you create a new Pelican-based website.
 
 Please answer the following questions so this script can generate the files
 needed by Pelican.
 
-    """
-    )
+    """)
 
     project = os.path.join(os.environ.get("VIRTUAL_ENV", os.curdir), ".project")
     no_path_was_specified = hasattr(args.path, "is_default_path")

@@ -2,7 +2,7 @@ import locale
 import logging
 import os
 import shutil
-from datetime import timezone
+from datetime import UTC
 from sys import platform
 from tempfile import mkdtemp
 
@@ -62,7 +62,7 @@ class TestUtils(LoggedTestCase):
         date = utils.SafeDatetime(year=2012, month=11, day=22)
         date_hour = utils.SafeDatetime(year=2012, month=11, day=22, hour=22, minute=11)
         date_hour_z = utils.SafeDatetime(
-            year=2012, month=11, day=22, hour=22, minute=11, tzinfo=timezone.utc
+            year=2012, month=11, day=22, hour=22, minute=11, tzinfo=UTC
         )
         date_hour_est = utils.SafeDatetime(
             year=2012, month=11, day=22, hour=22, minute=11, tzinfo=ZoneInfo("EST")
@@ -77,7 +77,7 @@ class TestUtils(LoggedTestCase):
             hour=22,
             minute=11,
             second=10,
-            tzinfo=timezone.utc,
+            tzinfo=UTC,
         )
         date_hour_sec_est = utils.SafeDatetime(
             year=2012,
@@ -96,7 +96,7 @@ class TestUtils(LoggedTestCase):
             minute=11,
             second=10,
             microsecond=123000,
-            tzinfo=timezone.utc,
+            tzinfo=UTC,
         )
         dates = {
             "2012-11-22": date,
