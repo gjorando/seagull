@@ -1,0 +1,20 @@
+{% extends "!simple/base.html" %}
+
+{% block title %}{% trans %}Welcome to our{% endtrans %} {{ SITENAME }}{% endblock title %}
+
+{% block head %}
+    {{ super() }}
+    <link rel="stylesheet" href="{{ SITEURL }}/{{ THEME_STATIC_DIR }}/style.css" />
+{% endblock head %}
+
+{% block footer %}
+    {{ super() }}
+    {{ "fr"|relpath_to_site("en") }}
+<pre>
+main_siteurl={{ main_siteurl }},
+main_lang={{ main_lang }},
+lang_siteurls={{ lang_siteurls }},
+extra_siteurls={{ extra_siteurls }},
+</pre>
+    {% include "subsites_list.html" %}
+{% endblock footer %}

@@ -1,0 +1,10 @@
+{% if lang_siteurls %}
+    <div>
+        Other subsites ({{ SITEURL }}):
+    </div>
+    <ul>
+        {% for lang, url in lang_siteurls.items() %}
+            <li{% if lang == DEFAULT_LANG %} style="font-weight: bold;"{% endif %}><a href="{{ url }}">{{ lang }}</a></li>
+        {% endfor %}
+    </ul>
+{% endif %}

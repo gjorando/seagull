@@ -1,0 +1,7 @@
+{% extends "index.html" %}
+
+{% block title %}{{ sitename|striptags }} - {{ tag.name }} tag{% endblock %}
+
+{% block content_title %}
+    <h2>Articles tagged with {{ tag.name }}</h2>
+{% endblock %}

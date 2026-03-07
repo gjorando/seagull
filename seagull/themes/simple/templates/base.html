@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="{% block html_lang %}{{ default_lang }}{% endblock html_lang %}">
+  <head>
+    {% block head %}
+      <title>{% block title %}{{ sitename|striptags }}{% endblock title %}</title>
+      <meta charset="utf-8" />
+      <meta name="generator" content="Pelican" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      {% if sitesubtitle %}
+        <meta name="description" content="{{ sitesubtitle }}" />
+      {% endif %}
+      {% if stylesheet_url %}
+        <link rel="stylesheet" type="text/css" href="{{ stylesheet_url }}" />
+      {% endif %}
+      {% if feed_all_atom %}
+        <link href="{{ feed }}/{% if feed_all_atom_url %}{{ feed_all_atom_url }}{% else %}{{ feed_all_atom }}{% endif %}" type="application/atom+xml" rel="alternate" title="{{ sitename|striptags }} Full Atom Feed" />
+      {% endif %}
+      {% if feed_all_rss %}
+        <link href="{{ feed_domain }}/{% if feed_all_rss_url %}{{ feed_all_rss_url }}{% else %}{{ feed_all_rss }}{% endif %}" type="application/rss+xml" rel="alternate" title="{{ sitename|striptags }} Full RSS Feed" />
+      {% endif %}
+      {% if feed_atom %}
+        <link href="{{ feed_domain }}/{%if feed_atom_url %}{{ feed_atom_url }}{% else %}{{ feed_atom }}{% endif %}" type="application/atom+xml" rel="alternate" title="{{ sitename|striptags }} Atom Feed" />
+      {% endif %}
+      {% if feed_rss %}
+        <link href="{{ feed_domain }}/{% if feed_rss_url %}{{ feed_rss_url }}{% else %}{{ feed_rss }}{% endif %}" type="application/rss+xml" rel="alternate" title="{{ sitename|striptags }} RSS Feed" />
+      {% endif %}
+      {% if category_feed_atom and category %}
+        <link href="{{ feed_domain }}/{% if category_feed_atom_url %}{{ category_feed_atom_url.format(slug=category.slug) }}{% else %}{{ category_feed_atom.format(slug=category.slug) }}{% endif %}" type="application/atom+xml" rel="alternate" title="{{ sitename|striptags }} Categories Atom Feed" />
+      {% endif %}
+      {% if category_feed_rss and category %}
+        <link href="{{ feed_domain }}/{% if category_feed_rss_url %}{{ category_feed_rss_url.format(slug=category.slug) }}{% else %}{{ category_feed_rss.format(slug=category.slug) }}{% endif %}" type="application/rss+xml" rel="alternate" title="{{ sitename|striptags }} Categories RSS Feed" />
+      {% endif %}
+      {% if tag_feed_atom and tag %}
+        <link href="{{ feed_domain }}/{% if tag_feed_atom_url %}{{ tag_feed_atom_url.format(slug=tag.slug) }}{% else %}{{ tag_feed_atom.format(slug=tag.slug) }}{% endif %}" type="application/atom+xml" rel="alternate" title="{{ sitename|striptags }} Tags Atom Feed" />
+      {% endif %}
+      {% if tag_feed_rss and tag %}
+        <link href="{{ feed_domain }}/{% if tag_feed_rss_url %}{{ tag_feed_rss_url.format(slug=tag.slug) }}{% else %}{{ tag_feed_rss.format(slug=tag.slug) }}{% endif %}" type="application/rss+xml" rel="alternate" title="{{ sitename|striptags }} Tags RSS Feed" />
+      {% endif %}
+    {% endblock head %}
+  </head>
+
+  <body>
+    {% block body %}
+      <header>
+        {% block header %}
+          <hgroup><h1><a href="{{ siteurl }}/{{ index_url }}">{{ sitename }}</a></h1>{% if SITESUBTITLE %}<p>{{ SITESUBTITLE }}</p>{% endif %}</hgroup>
+        {% endblock header %}
+        {% block nav %}
+          <nav><ul>
+            {% for title, link in menuitems %}
+              <li><a href="{{ link }}">{{ title }}</a></li>
+            {% endfor %}
+            {% if display_pages_on_menu %}
+              {% for p in pages %}
+                <li><a href="{{ siteurl }}/{{ p.url }}" {% if p==page %} aria-current="page" {% endif %}>{{ p.title }}</a></li>
+              {% endfor %}
+            {% endif %}
+            {% if display_categories_on_menu %}
+              {% for cat in categories %}
+                <li><a href="{{ siteurl }}/{{ cat.url }}" {% if cat==category %} aria-current="page" {% endif %}>{{ cat.name }}</a></li>
+              {% endfor %}
+            {% endif %}
+          </ul></nav>
+        {% endblock nav %}
+      </header>
+      <main>
+        {% block content %}
+        {% endblock content %}
+      </main>
+      <footer>
+        {% block footer %}
+          <address>
+            Proudly powered by <a rel="nofollow" href="https://getpelican.com/">Pelican</a>,
+            which takes great advantage of <a rel="nofollow" href="https://www.python.org/">Python</a>.
+          </address>
+        {% endblock footer %}
+      </footer>
+    {% endblock body %}
+  </body>
+</html>

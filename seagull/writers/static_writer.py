@@ -1,0 +1,19 @@
+from typing import TYPE_CHECKING
+
+from seagull.writers.writer import Writer
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from seagull.contents import SeagullObject
+    from seagull.context import Context
+
+
+class StaticWriter(Writer):
+    """Static files writer class."""
+
+    file_extensions: list[str] = [None]
+
+    def _parse_data(self, obj: SeagullObject, _: Context) -> Path:
+        # StaticWriter simply instructs write_file to copy the source file to the output
+        return self.settings.path / obj.source_path

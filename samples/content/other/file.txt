@@ -1,0 +1,1 @@
+This file will be manually included as a static file, as it is linked by all-the-metadata.rst.
