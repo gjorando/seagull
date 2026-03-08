@@ -2,7 +2,7 @@ import logging
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, ClassVar, Self
 
 from seagull.log import logger
 
@@ -22,9 +22,9 @@ class Writer(ABC):
 
     # FIXME metaclass for all this duplicated code from Reader?
     enabled: bool = True
-    file_extensions: list[str] = []
-    _instances: dict[type[Writer], Writer] = {}
-    _per_extension: dict[str | None, Writer] = {}
+    file_extensions: ClassVar[list[str | None]] = []
+    _instances: ClassVar[dict[type[Writer], Writer]] = {}
+    _per_extension: ClassVar[dict[str | None, Writer]] = {}
 
     @classmethod
     def all_writers(cls) -> Iterable[type[Writer]]:
@@ -92,7 +92,7 @@ class Writer(ABC):
         object.
         """
 
-    def write_file[T: SeagullObject](self, obj: T, context: Context):
+    def write_file[T: SeagullObject](self, obj: T, context: Context) -> None:
         """Parse a seagull object to write a file.
 
         It uses the `_parse_data` method to create the content of the output file.

@@ -128,11 +128,12 @@ if TYPE_CHECKING:
 @clickx.option("--listen", "-l", is_flag=True, help="Run the development HTTP server.")
 def main(
     settings: Settings,
-    print_settings: bool,
-    ignore_cache: bool,
-    autoreload: bool,
-    listen: bool,
-):
+    *,
+    print_settings: bool = False,
+    ignore_cache: bool = False,
+    autoreload: bool = False,
+    listen: bool = False,
+) -> None:
     """A tool to generate a static blog, with restructured text input files.
 
     \f
@@ -161,16 +162,18 @@ def main(
     # TODO find a way to use a clickx callback instead
     if print_settings:
         settings_dict = asdict(settings)
-        # FIXME
-        # settings_dict.update(settings_dict.pop("_extra"))
+        # TODO also report extra settings
         for k, v in settings_dict.items():
             if k.startswith("_"):
                 continue
-            if isinstance(v, (str, Path)):
-                v = f"'{v}'"
-            elif isinstance(v, (dict, list)):
-                v = pformat(v)
-            clickx.echo(f"{k.upper()}={v}")
+            match v:
+                case dict() | list():
+                    display_value = pformat(v)
+                case Path() | str():
+                    display_value = f"'{v}'"
+                case _:
+                    display_value = str(v)
+            clickx.echo(f"{k.upper()}={display_value}")
         return
 
     try:

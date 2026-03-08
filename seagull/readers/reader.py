@@ -2,9 +2,10 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import fields
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Self
+from itertools import chain
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
-from seagull.exceptions import DiscardMetadataException, SkippedFileException
+from seagull.exceptions import DiscardMetadataError, SkippedFileError
 from seagull.log import logger
 from seagull.readers.metadata_processors import MetadataProcessor
 
@@ -23,9 +24,9 @@ class Reader(ABC):
     A `Reader` object creates seagull objects from a file."""
 
     enabled: bool = True
-    file_extensions: list[str] = []
-    _instances: dict[type[Reader], Reader] = {}
-    _per_extension: dict[str | None, Reader] = {}
+    file_extensions: ClassVar[list[str | None]] = []
+    _instances: ClassVar[dict[type[Reader], Reader]] = {}
+    _per_extension: ClassVar[dict[str | None, Reader]] = {}
 
     def __init__(self, settings: Settings):
         """Create a new `Reader`.
@@ -91,6 +92,77 @@ class Reader(ABC):
         :return: Parsed content and unprocessed metadata dictionary.
         """
 
+    # FIXME remove default fields that aren't in the dataclass fields of the content class?
+    def _default_metadata[T: SeagullObject](
+        self, path: Path, content_class: type[T], base_path: Path
+    ) -> dict[str, Any]:
+        """Create the default metadata for an object.
+
+        :param path: Absolute path of the source file.
+        :param content_class: Class of the content object to create.
+        :param base_path: Base path of the source file.
+        :return: A dictionary of unprocessed metadata attributes.
+        """
+        metadata = {}
+        # Defaults from settings
+        for key, value in chain(
+            # DEFAULT_METADATA
+            self.settings.default_metadata.items(),
+            # DEFAULT_*
+            (
+                (f.name, getattr(self.settings, f"default_{f.name}", None))
+                for f in fields(content_class)
+            ),
+            # AUTHOR
+            (("authors", self.settings.author),),
+            # EXTRA_PATH_METADATA
+            (
+                (k, v)
+                # Sorting so that the most specific path wins a conflict
+                for target_path, extra_metadata in sorted(
+                    self.settings.extra_path_metadata.items()
+                )
+                if path.is_relative_to(target_path)
+                for k, v in extra_metadata.items()
+            ),
+        ):
+            field_name = key.lower()
+            match field_name, value:
+                # Skip None or empty values
+                case _, (None | ""):
+                    continue
+                # DEFAULT_DATE="fs" gets special treatment
+                case "date", "fs":
+                    metadata[field_name] = datetime.fromtimestamp(
+                        (self.settings.path / path).stat().st_mtime,
+                        tz=self.settings.timezone,
+                    )
+                case _, _:
+                    metadata[field_name] = value
+
+        # Defaults from source path
+        regexes = {}
+        # PATH_METADATA -> parent directory
+        if regex := self.settings.path_metadata:
+            regexes[regex] = path.parent
+        # FILENAME_METADATA -> file name without the extension
+        if regex := self.settings.filename_metadata:
+            regexes[regex] = path.stem
+        # USE_FOLDER_AS_CATEGORY = True -> parent directory name is the category
+        # ... Except if the source file is in the base path
+        if self.settings.use_folder_as_category and path.parent != base_path:
+            regexes[r"(?P<category>.*)"] = path.parent.name
+        # Execute each regex
+        for regex, target in regexes.items():
+            if not target:
+                continue
+            if not (match := re.match(regex, target)):
+                continue
+            for key, value in match.groupdict().items():
+                if value:
+                    metadata[key.lower()] = value
+        return metadata
+
     def read_file[T: SeagullObject](
         self,
         path: Path,
@@ -118,70 +190,23 @@ class Reader(ABC):
         logger.debug(
             f"Parsing '{log_path}' into an object of type '{content_class.__name__}'."
         )
-        metadata = {}
         content_fields = [f.name for f in fields(content_class)]
         is_extra_dataclass = getattr(content_class, "__extra_dataclass__", False)
 
-        def _process_metadata(k, v, dest):
+        def _process_metadata(k: str, v: object, dest: dict[str, object]) -> None:
             try:
                 # If the content class doesn't accept extra metadata and the key is not
                 # a regular field, discard it
                 if k not in content_fields and not is_extra_dataclass:
-                    raise DiscardMetadataException(k)
+                    raise DiscardMetadataError(k)
                 dest[k] = MetadataProcessor.process(
                     k, v, settings=self.settings, context=context
                 )
-            except DiscardMetadataException:
-                if k in dest:
-                    del dest[k]
+            except DiscardMetadataError:
+                dest.pop(k, None)
 
-        # Defaults from settings (DEFAULT_METADATA and DEFAULT_* keys)
-        for key, value in self.settings.default_metadata.items():
-            metadata[key.lower()] = value
-        for key in content_fields:  # look for a DEFAULT_* setting for each field
-            if value := getattr(self.settings, f"default_{key}", None):
-                # DEFAULT_DATE="fs" gets special treatment
-                if key == "date" and value == "fs":
-                    metadata[key] = datetime.fromtimestamp(
-                        (self.settings.path / path).stat().st_mtime
-                    )
-                    continue
-                metadata[key] = value
-        # Default author
-        if value := self.settings.author:
-            # 'authors', because the default author can be a list of authors
-            metadata["authors"] = value
-
-        # Defaults from EXTRA_PATH_METADATA
-        epm = self.settings.extra_path_metadata
-        # Sorting so that the most specific path wins a conflict
-        for target_path, extra_metadata in sorted(epm.items()):
-            if path.is_relative_to(target_path):
-                for key, value in extra_metadata.items():
-                    metadata[key.lower()] = value
-
-        # Process metadata from source path
-        regexes = {}
-        # PATH_METADATA -> parent directory
-        if regex := self.settings.path_metadata:
-            regexes[regex] = path.parent
-        # FILENAME_METADATA -> file name without the extension
-        if regex := self.settings.filename_metadata:
-            regexes[regex] = path.stem
-        # USE_FOLDER_AS_CATEGORY = True -> parent directory name is the category
-        # ... Except if the source file is in the base path
-        if self.settings.use_folder_as_category and path.parent != base_path:
-            regexes[r"(?P<category>.*)"] = path.parent.name
-        # Execute each regex
-        for regex, target in regexes.items():
-            if not target:
-                continue
-            if not (match := re.match(regex, target)):
-                continue
-            for key, value in match.groupdict().items():
-                if value:
-                    metadata[key.lower()] = value
-        # FIXME remove default fields that aren't in the dataclass fields of the content class?
+        # Get the default metadata
+        metadata = self._default_metadata(path, content_class, base_path)
 
         # Parse the source file
         content, reader_metadata = self._parse_data(path)
@@ -200,6 +225,6 @@ class Reader(ABC):
         # We skip items who have a skip status, or those whose output path has been
         # explicitly set to an empty value
         if metadata.get("status") == "skip" or not metadata.get("save_as", True):
-            raise SkippedFileException(path)
+            raise SkippedFileError(path)
 
         return content_class(self.settings, content, path, base_path, **metadata)

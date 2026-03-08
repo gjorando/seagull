@@ -1,6 +1,6 @@
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from seagull.exceptions import InvalidObject
+from seagull.exceptions import InvalidObjectError
 from seagull.readers import Reader
 
 if TYPE_CHECKING:
@@ -15,11 +15,11 @@ class StaticReader(Reader):
     """
 
     # None indicates this reader is suitable for static files
-    file_extensions = [None]
+    file_extensions: ClassVar[list[str | None]] = [None]
 
     def _parse_data(self, path: Path) -> tuple[str, dict[str, Any]]:
         # A static file must exist in order to be valid
         if not path.exists():
-            raise InvalidObject(f"Static file '{path}' doesn't exist.")
+            raise InvalidObjectError(f"Static file '{path}' doesn't exist.")
         metadata = {"title": path.stem}
         return "", metadata

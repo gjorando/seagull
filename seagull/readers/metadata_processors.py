@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, ClassVar
 
 from seagull.contents import Author, Category, Tag, Taxonomy
-from seagull.exceptions import DiscardMetadataException
+from seagull.exceptions import DiscardMetadataError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -20,12 +20,12 @@ class MetadataProcessor(ABC):
     Each new processor can be registered with `MetadataProcessor.register`.
     """
 
-    _processors: dict[str, Callable] = {}
+    _processors: ClassVar[dict[str, Callable]] = {}
 
     @abstractmethod
     def __call__(
-        self, key: str, value: Any, settings: Settings, context: Context
-    ) -> Any:
+        self, key: str, value: object, settings: Settings, context: Context
+    ) -> object:
         """Process the metadata.
 
         :param key: Name of the metadata attribute.
@@ -36,7 +36,7 @@ class MetadataProcessor(ABC):
         """
 
     @classmethod
-    def register(cls, keys: str | list[str], instance_or_func: Callable):
+    def register(cls, keys: str | list[str], instance_or_func: Callable) -> None:
         """Register a new processor.
 
         A processor can also be a function, for more basic processors.
@@ -54,7 +54,9 @@ class MetadataProcessor(ABC):
             cls._processors[key.lower()] = instance_or_func
 
     @classmethod
-    def process(cls, key: str, value: Any, settings: Settings, context: Context) -> Any:
+    def process(
+        cls, key: str, value: object, settings: Settings, context: Context
+    ) -> object:
         """Process a metadata attribute.
 
         The appropriate processor is retrieved based on the `key` argument. If no
@@ -79,6 +81,7 @@ class SeagullObjectProcessor[T: SeagullObject](MetadataProcessor):
     def __init__(
         self,
         object_class: type[T],
+        *,
         multiple: bool = False,
         discard_if_empty: bool = False,
     ):
@@ -92,7 +95,7 @@ class SeagullObjectProcessor[T: SeagullObject](MetadataProcessor):
         self.discard_if_empty = discard_if_empty
 
     def __call__(
-        self, key: str, value: Any, settings: Settings, context: Context
+        self, key: str, value: object, settings: Settings, context: Context
     ) -> T | list[T]:
         """Parse into Seagull objects.
 
@@ -107,7 +110,7 @@ class SeagullObjectProcessor[T: SeagullObject](MetadataProcessor):
         if isinstance(value, str):
             value = value.strip()
         if not value and self.discard_if_empty:
-            raise DiscardMetadataException(key.lower())
+            raise DiscardMetadataError(key.lower())
 
         # Split the value if it's a string and we are parsing multiple objects
         if self.multiple and isinstance(value, str):
@@ -122,8 +125,8 @@ class SeagullObjectProcessor[T: SeagullObject](MetadataProcessor):
 
         # Convert the values into Seagull objects
         objects = []
-        for value in values:
-            value = value.strip()
+        for v in values:
+            value = v.strip()
             # Skip empty values
             if not value:
                 continue
@@ -139,14 +142,14 @@ class SeagullObjectProcessor[T: SeagullObject](MetadataProcessor):
         return objects if self.multiple else objects[0]
 
 
-def discard_if_empty_processor(key: str, value: Any, **_: Any) -> str:
+def discard_if_empty_processor(key: str, value: str, **_: dict) -> str:
     """Raise a `DiscardMetadataException` if the value evaluates to `False`."""
     if not value:
-        raise DiscardMetadataException(key.lower())
+        raise DiscardMetadataError(key.lower())
     return value
 
 
-def boolean_processor(_: str, value: Any, **__: Any) -> bool:
+def boolean_processor(_: str, value: str, **__: dict) -> bool:
     """Convert a boolean string to a Python boolean.
 
     A string is evaluated to be `True` if it is either "true", "t", "yes" or "y"

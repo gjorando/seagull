@@ -37,7 +37,7 @@ class StaticGenerator[T: Static](Generator):
         # A static file can have any extension
         return True
 
-    def add_object_to_context(self, obj: T):
+    def add_object_to_context(self, obj: T) -> None:
         # Static files are recorded separately
         self.context.static_content[obj.source_path] = obj
 

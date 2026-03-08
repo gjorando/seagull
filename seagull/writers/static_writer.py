@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from seagull.writers.writer import Writer
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 class StaticWriter(Writer):
     """Static files writer class."""
 
-    file_extensions: list[str] = [None]
+    file_extensions: ClassVar[list[str | None]] = [None]
 
     def _parse_data(self, obj: SeagullObject, _: Context) -> Path:
         # StaticWriter simply instructs write_file to copy the source file to the output

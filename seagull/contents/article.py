@@ -13,7 +13,8 @@ if TYPE_CHECKING:
 class Article(Content):
     """A seagull article object."""
 
-    mandatory_fields: ClassVar[tuple[str, ...]] = Content.mandatory_fields + (
+    mandatory_fields: ClassVar[tuple[str, ...]] = (
+        *Content.mandatory_fields,
         "date",
         "category",
         "author",
@@ -31,6 +32,6 @@ class Article(Content):
     @property
     def jinja_context(self) -> dict[str, Any]:
         return super().jinja_context | {
-            # Legacy behaviour of Pelican
+            # Legacy behavior of Pelican
             "category": self.category.name
         }

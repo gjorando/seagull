@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from seagull.contents.tag import Tag
 
 
-class AuthorDescriptor:
+class AuthorDescriptor[T: Content]:
     """A descriptor for the 'author' metadata key.
 
     This descriptor provides a shorthand for getting and setting the first author in the
@@ -23,7 +23,7 @@ class AuthorDescriptor:
     the object creation, this attribute overrides the first author in the list.
     """
 
-    def __set_name__(self, owner, name: str):
+    def __set_name__(self, owner: type[T], name: str) -> None:
         """Store the attribute name and that of its associated authors list.
 
         :param owner: Owner class of the attribute.
@@ -35,7 +35,7 @@ class AuthorDescriptor:
         self._name = name
 
     def __get__(
-        self, instance: Content | type[Content], owner: type[Content] | None = None
+        self, instance: Content | type[T], owner: type[T] | None = None
     ) -> Author | None:
         """Author attribute getter.
 
@@ -59,7 +59,7 @@ class AuthorDescriptor:
         authors = getattr(instance, self._author_list)
         return authors[0] if authors else None
 
-    def __set__(self, instance: Content, value: Author | None):
+    def __set__(self, instance: T, value: Author | None) -> None:
         """Author attribute setter.
 
         Upon initialization of a python dataclass, this attribute will be set with the
@@ -102,12 +102,11 @@ class Content(SeagullObject):
     modified: datetime | None = None
     summary: str = ""
     tags: list[Tag] = field(default_factory=list)
-    # keywords: list[str] = field(default_factory=list)
     authors: list[Author] = field(default_factory=list)
     author: AuthorDescriptor = AuthorDescriptor()
     status: str = "published"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         super().__post_init__()
 
         if self.status not in self.allowed_statuses:

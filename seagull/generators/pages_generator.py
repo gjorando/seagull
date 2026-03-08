@@ -14,7 +14,7 @@ class PagesGenerator[T: Page](Generator):
 
     content_class: type[T] = Page
 
-    def _update_context(self, objs: list[T]):
+    def _update_context(self, objs: list[T]) -> None:
         super()._update_context(objs)
         # Add our original pages to the context
         for obj in self.original_content:
@@ -43,7 +43,7 @@ class PagesGenerator[T: Page](Generator):
                 return self.context.draft_pages
         raise AttributeError(status)
 
-    def add_object_to_context(self, obj: T):
+    def add_object_to_context(self, obj: T) -> None:
         self.context.generated_content[obj.source_path] = obj
 
     @property

@@ -99,7 +99,7 @@ class Context:
         raise KeyError(name)
 
     def get_or_new_taxon[T: Taxonomy](
-        self, taxon_class: type[T], name: str, **kwargs: Any
+        self, taxon_class: type[T], name: str, **kwargs: dict
     ) -> T:
         """Retrieve a taxonomy object from its name.
 

@@ -29,5 +29,5 @@ class Taxonomy(SeagullObject):
         return self.title
 
     @name.setter
-    def name(self, value: str):
+    def name(self, value: str) -> None:
         self.title = value

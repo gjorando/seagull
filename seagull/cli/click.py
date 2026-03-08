@@ -1,6 +1,7 @@
 import ipaddress
 import json
 import logging
+from logging import Logger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -9,6 +10,7 @@ import click_extra as clickx
 from seagull.settings import Settings
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from ipaddress import IPv4Address, IPv6Address
 
 
@@ -18,7 +20,7 @@ class JsonKeyValueType(clickx.ParamType):
     name = "key-value pair"
 
     def convert(
-        self, value: Any, param: clickx.Parameter | None, ctx: clickx.Context | None
+        self, value: str, param: clickx.Parameter | None, ctx: clickx.Context | None
     ) -> tuple[str, Any]:
         """Validation callback for a key-value pair.
 
@@ -64,11 +66,14 @@ class SeagullSettingsType(clickx.Path):
     `SeagullSettingsType` parameter, and other CLI options should come after.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(exists=True, dir_okay=False, path_type=Path)
 
     def convert(
-        self, value: Any, param: clickx.Parameter | None, ctx: clickx.Context | None
+        self,
+        value: str | Path,
+        param: clickx.Parameter | None,
+        ctx: clickx.Context | None,
     ) -> Settings:
         """Load a settings module into a `Settings` instance."""
         path = super().convert(value, param, ctx)
@@ -89,8 +94,7 @@ class SeagullSettingsType(clickx.Path):
         cli_overrides.update(ctx.params.pop("extra_settings"))
 
         # Load the settings from the settings module
-        settings = Settings.from_settings_file(path, **cli_overrides)
-        return settings
+        return Settings.from_settings_file(path, **cli_overrides)
 
 
 class IPAddressType(clickx.ParamType):
@@ -99,7 +103,7 @@ class IPAddressType(clickx.ParamType):
     name = "ip address"
 
     def convert(
-        self, value: Any, param: clickx.Parameter | None, ctx: clickx.Context | None
+        self, value: str, param: clickx.Parameter | None, ctx: clickx.Context | None
     ) -> IPv4Address | IPv6Address:
         """Validation callback for an IP address.
 
@@ -120,7 +124,7 @@ class CliVerboseOption(clickx.VerboseOption):
     """
 
     @property
-    def all_loggers(self):
+    def all_loggers(self) -> Iterable[Logger]:
         yield logging.getLogger(self.logger_name)
 
 

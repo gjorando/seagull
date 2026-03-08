@@ -1,21 +1,26 @@
 from functools import partial
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from click_extra import new_extra_logger
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from logging import Logger
     from pathlib import Path
 
 # TODO use rich handler instead
-logger = new_extra_logger(
+logger: Logger = new_extra_logger(
     name="seagull", format="{asctime} {levelname} | {message}", datefmt="[%H:%M:%S]"
 )
 
 
-def log_with_paths(
-    log_callable: Callable, msg: str, *args: Any, paths: list[Path], **kwargs: Any
-):
+def log_with_paths[**P](
+    log_callable: Callable,
+    msg: str,
+    *args: P.args,
+    paths: list[Path],
+    **kwargs: P.kwargs,
+) -> None:
     """Log a message with one or more paths attached to it.
 
     :param log_callable: A callable object that logs a message, typically one of the

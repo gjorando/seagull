@@ -23,7 +23,7 @@ class ArticlesGenerator[T: Article](PagesGenerator):
                 return self.context.drafts
         raise AttributeError(status)
 
-    def generate_context(self):
+    def generate_context(self) -> None:
         super().generate_context()
 
         # Now, we process taxonomies

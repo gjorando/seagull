@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from seagull.contents import SeagullObject
-from seagull.exceptions import SeagullException
+from seagull.exceptions import SeagullError
 from seagull.generators.generator import Generator
 from seagull.log import logger
 
@@ -16,7 +16,7 @@ class DirectTemplateGenerator[T: SeagullObject](Generator):
 
     content_class: type[T] = SeagullObject
 
-    def add_object_to_context(self, obj: T):
+    def add_object_to_context(self, obj: T) -> None:
         pass
 
     def _create_objects(self) -> list[T]:
@@ -53,7 +53,7 @@ class DirectTemplateGenerator[T: SeagullObject](Generator):
                     url=url,
                     template=template_name,
                 )
-            except SeagullException:
+            except SeagullError:
                 logger.exception(
                     f"Couldn't process direct template '{template_name}'.",
                     exc_info=logger.level == logging.DEBUG,

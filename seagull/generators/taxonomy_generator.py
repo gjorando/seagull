@@ -21,7 +21,7 @@ class TaxonomyGenerator[T: Taxonomy](Generator):
         super().__init__(settings, context)
         self._content_class = content_class
 
-    def generate_output(self):
+    def generate_output(self) -> None:
         # Before writing the output, we need to update the generated content with
         # taxonomies that were created by other seagull objects, and that are not empty
         for obj in self.context.taxonomies[self.content_class]:
@@ -30,7 +30,7 @@ class TaxonomyGenerator[T: Taxonomy](Generator):
         # FIXME maybe call _link_translations again?
         super().generate_output()
 
-    def add_object_to_context(self, obj: T):
+    def add_object_to_context(self, obj: T) -> None:
         # FIXME handle translations
         self.context.taxonomies[self.content_class].append(obj)
 

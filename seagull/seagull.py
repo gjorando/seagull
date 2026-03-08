@@ -17,6 +17,9 @@ from seagull.generators import (
 from seagull.log import logger
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
     from seagull.generators import Generator
     from seagull.settings import Settings
 
@@ -40,14 +43,16 @@ class Seagull:
             ThemeStaticGenerator,
         ]
 
-    def _clear_output_dir(self, dry_run: bool = False):
+    def _clear_output_dir(self, *, dry_run: bool = False) -> None:
         """Delete the output directory according to the retention policy.
 
         :param dry_run: If `True`, the files that would be deleted are logged but no
         actual deletion takes place.
         """
 
-        def _dry_run(func, target, *args, **kwargs):
+        def _dry_run[**P](
+            func: Callable[P, None], target: Path, *args: P.args, **kwargs: P.kwargs
+        ) -> None:
             if dry_run:
                 logger.debug(f"Would delete '{target}'.")
             else:
@@ -96,7 +101,7 @@ class Seagull:
                     exc_info=logger.level == logging.DEBUG,
                 )
 
-    def run(self):
+    def run(self) -> None:
         """Main generation sequence."""
         # Create a new shared context
         context = Context()

@@ -20,9 +20,9 @@ def timed_execution(
     `timed_execution.decorator.wrapper`.
     """
 
-    def decorator(func: Callable):
+    def decorator[T, **P](func: Callable[P, T]) -> Callable[P, T]:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> object:
             func_name = func.__name__
             start_time = time.time()
             return_value = func(*args, **kwargs)
@@ -43,9 +43,9 @@ def timed_execution(
     return decorator
 
 
-def extra_dataclass[T](
-    cls_: Callable | None = None, *, ignore_extra: bool = False
-) -> Callable:
+def extra_dataclass[D](
+    cls_: type[D] | None = None, *, ignore_extra: bool = False
+) -> Callable | type[D]:
     """Decorator for dataclasses that accept an arbitrary number of extra arguments.
 
     This decorator must be put before the `dataclass` decorator. This decorator probably
@@ -64,13 +64,13 @@ def extra_dataclass[T](
     """
 
     @dataclass_transform()
-    def decorator(cls: type[T]) -> type[T]:
+    def decorator[**P](cls: type[D]) -> type[D]:
         # Save the base __init__ method
         base_init = cls.__init__
         dataclass_fields = {f.name for f in fields(cls)}
 
         @functools.wraps(base_init)
-        def init_wrapper(self, *args, **kwargs):
+        def init_wrapper(self: D, *args: P.args, **kwargs: P.kwargs) -> None:
             # Accepted field arguments for the dataclass
             base_kwargs = {k: v for k, v in kwargs.items() if k in dataclass_fields}
 

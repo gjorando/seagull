@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 from jinja2.exceptions import TemplateNotFound
 from slugify import slugify
 
-from seagull.exceptions import InvalidObject
+from seagull.exceptions import InvalidObjectError
 from seagull.log import logger, warning_with_paths
 
 if TYPE_CHECKING:
@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
     from bs4 import Tag
 
+    from seagull.contents import Taxonomy
     from seagull.context import Context
     from seagull.settings import Settings
 
@@ -34,12 +35,12 @@ def reserved_property(fget: Callable) -> property:
     :return: A `property` object.
     """
 
-    def fset(self: SeagullObject, _):
+    def fset(self: SeagullObject, _: object) -> None:
         """Failsafe setter for the property.
 
         :raise InvalidObject: Always.
         """
-        raise InvalidObject(
+        raise InvalidObjectError(
             f"'{fget.__name__}' is a reserved metadata key for objects "
             f"of type '{self.__class__.__name__}'."
         )
@@ -87,7 +88,7 @@ class IntrasiteLinkParser:
         links.
         """
         self.regex_str: str = rf"{intrasite_link_regex}(?P<target>.*)"
-        self.regex: re.Pattern = re.compile(self.regex_str, re.X)
+        self.regex: re.Pattern = re.compile(self.regex_str, re.VERBOSE)
         if not valid_identifiers:
             valid_identifiers = None
         elif isinstance(valid_identifiers, str):
@@ -98,33 +99,33 @@ class IntrasiteLinkParser:
         """Filter out tags that don't have a valid link attribute."""
         return any(tag.has_attr(attr) for attr in self.valid_attrs)
 
-    @staticmethod
-    def _iterate_object(data: SeagullObject) -> Iterable[tuple[str, BeautifulSoup]]:
-        """Iterate over every formatted field in a seagull object.
-
-        :param data: A seagull object.
-        :return: Iterate a tuple of `(field_name, soupified_content)`.
-        """
-        for key in data.settings.formatted_fields + ["content"]:
-            # Soup time if the field exists in the object
-            if value := getattr(data, key, None):
-                yield key, BeautifulSoup(value, features=data.settings.html_parser)
-
-    def _iterate_valid_attrs(
-        self, soup: BeautifulSoup
+    def _object_valid_attrs(
+        self, obj: SeagullObject, *, update_field: bool = False
     ) -> Iterable[tuple[Tag, str, str]]:
-        """Iterate all valid attributes in all tags of a soup.
+        """Iterate over every valid attribute of all HTML tags in the object.
 
-        :param soup: Soupified content.
-        :return: Iterate a tuple of `(associated_tag, attr_name, attr_value)`.
+        Both the content of the object and the formatted fields are searched for.
+
+        :param obj: A seagull object.
+        :param update_field: If `True` each field is updated once all its attributes
+        have been iterated over. This means that the `Tag` object can be updated, it
+        will be reflected in the value of the field.
+        :return: Iterate a tuple of `(bs4_tag, attr_name, attr_value)`.
         """
-        # Look for all tags with a valid link attribute
-        for tag in soup(self._has_valid_attr):
-            # For every link attribute
-            for attr_name, attr_value in tag.attrs.items():
-                # Yield if the attribute is an accepted attribute
-                if attr_name in self.valid_attrs:
-                    yield tag, attr_name, attr_value
+        for field_name in [*obj.settings.formatted_fields, "content"]:
+            # Soup time if the field exists in the object
+            if value := getattr(obj, field_name, None):
+                soup = BeautifulSoup(value, features=obj.settings.html_parser)
+                # Look for all tags with a valid link attribute
+                for html_tag in soup(self._has_valid_attr):
+                    # For every link attribute
+                    for attr_name, attr_value in html_tag.attrs.items():
+                        # Yield if the attribute is an accepted attribute
+                        if attr_name in self.valid_attrs:
+                            yield html_tag, attr_name, attr_value
+                # And we update the content of the field if required
+                if update_field:
+                    setattr(obj, field_name, str(soup))
 
     def extract(self, obj: SeagullObject) -> set[IntrasiteLink]:
         """Retrieve the intrasite links.
@@ -134,41 +135,75 @@ class IntrasiteLinkParser:
         """
         links = set()
         # Retrieve the links from all formatted fields, including the content itself
-        for _, soup in self._iterate_object(obj):
-            for _, _, attr_value in self._iterate_valid_attrs(soup):
-                # Go to the next attribute if we don't have a match
-                if not (match := self.regex.match(attr_value)):
-                    continue
-                # If we have a list of valid types, skip links of another type
-                what = match.group("what").lower().strip()
-                if self.valid_identifiers and what not in self.valid_identifiers:
-                    continue
-                # Convert %xx escapes back to unicode
-                target = urllib.parse.unquote(match.group("target"))
-                # If the target is a path
-                if what in self.path_identifiers:
-                    target = Path(target)
-                    # Make the path absolute:
-                    # - if it has a leading slash path, it is rooted in the base path
-                    # - otherwise, it is relative to the source_path folder
-                    target = (
-                        obj.base_path
-                        / (
-                            # path.relative_to("/") if path.is_relative_to("/") removes the
-                            # leading slash
-                            target.relative_to("/")
-                            if target.is_relative_to("/")
-                            else obj.relative_source_path.parent / target
-                        )
-                    ).resolve()
-                link = IntrasiteLink(
-                    raw_link=attr_value, identifier=what, target=target
-                )
-                links.add(link)
+        for _, _, attr_value in self._object_valid_attrs(obj):
+            # Go to the next attribute if we don't have a match
+            if not (match := self.regex.match(attr_value)):
+                continue
+            # If we have a list of valid types, skip links of another type
+            what = match.group("what").lower().strip()
+            if self.valid_identifiers and what not in self.valid_identifiers:
+                continue
+            # Convert %xx escapes back to unicode
+            target = urllib.parse.unquote(match.group("target"))
+            # If the target is a path
+            if what in self.path_identifiers:
+                target = Path(target)
+                # Make the path absolute:
+                # - if it has a leading slash path, it is rooted in the base path
+                # - otherwise, it is relative to the source_path folder
+                target = (
+                    obj.base_path
+                    / (
+                        # path.relative_to("/") if path.is_relative_to("/") removes
+                        # the leading slash
+                        target.relative_to("/")
+                        if target.is_relative_to("/")
+                        else obj.relative_source_path.parent / target
+                    )
+                ).resolve()
+            link = IntrasiteLink(raw_link=attr_value, identifier=what, target=target)
+            links.add(link)
         return links
 
-    def update(self, obj: SeagullObject, context: Context):
-        """Update intrasite links using data fron a `Context` object.
+    @staticmethod
+    def _target_link_from_source_path(
+        context: Context, identifier: str, target: str | Path
+    ) -> str | None:
+        """Get the target link from content/static file.
+
+        :param context: Shared context.
+        :param identifier: An identifier among `self.path_identifiers`.
+        :param target: The source path of the target.
+        :return: The target link, or `None` if there is no content or static file for
+        this source path.
+        """
+        context_key = (
+            "generated_content" if identifier == "filename" else "static_content"
+        )
+        # TODO handle attached files
+        if not (target_obj := getattr(context, context_key).get(target)):
+            return None
+        return target_obj.url
+
+    @staticmethod
+    def _target_link_from_taxon(
+        taxa: list[Taxonomy],
+        taxon_name: str | Path,
+    ) -> str | None:
+        """Get the target link from a taxonomy.
+        :param taxa: List of taxonomies to search..
+        :param taxon_name: The name of the taxon.
+        :return: The target link, or `None` if there is no taxonomy with this type and
+        name.
+        """
+        # Try fetching the taxon by name
+        for taxon in taxa:
+            if taxon.name == taxon_name:
+                return taxon.url
+        return None
+
+    def update(self, obj: SeagullObject, context: Context) -> None:
+        """Update intrasite links using data from a `Context` object.
 
         :param obj: A seagull object. Formatted fields are parsed as well.
         :param context: Shared context to use for link replacement.
@@ -177,45 +212,35 @@ class IntrasiteLinkParser:
         links = self.extract(obj)
         # Then, we create a replacement for each intrasite reference
         parsed_links: dict[str, str] = {}
-        for raw_link, what, target in links:
-            match what:
-                # Static files
-                # TODO handle attached files
-                case _ if what in self.path_identifiers:
-                    context_key = (
-                        "generated_content" if what == "filename" else "static_content"
-                    )
-                    if not (target_obj := getattr(context, context_key).get(target)):
+        for raw_link, identifier, target in links:
+            match identifier:
+                case _ if identifier in self.path_identifiers:  # Static/content files
+                    if not (
+                        target_path := self._target_link_from_source_path(
+                            context, identifier, target
+                        )
+                    ):
                         logger.warning(
                             f"'{target}': unknown content in '{obj.source_path}'."
                         )
-                        continue
-                    target_path = target_obj.url
-                # Index
-                # FIXME allow for any direct template
-                case "index":
+                case "index":  # Index direct template
+                    # FIXME allow for any direct template
                     target_path = obj.settings.index_url
-                # Taxonomies, or unknown identifier
-                case _:
+                case _:  # Taxonomies, or unknown identifier
                     # Try getting the appropriate list of taxa
                     try:
-                        _, taxa = context.taxa_by_name(what)
+                        _, taxa = context.taxa_by_name(identifier)
                     except KeyError:
                         logger.warning(
-                            f"'{what}': unknown link identifier in '{obj.source_path}'."
-                        )
-                        continue
-                    # Try fetching the taxon by name
-                    for taxon in taxa:
-                        if taxon.name == target:
-                            target_path = taxon.url
-                            break
-                    else:
-                        logger.warning(
-                            f"'{target}': unknown {what.lower()} in "
+                            f"'{identifier}': unknown link identifier in "
                             f"'{obj.source_path}'."
                         )
                         continue
+                    if not (target_path := self._target_link_from_taxon(taxa, target)):
+                        logger.warning(
+                            f"'{target}': unknown {identifier.lower()} in "
+                            f"'{obj.source_path}'."
+                        )
             # At this point, we should have a target path, relative to the output path
             target_path = Path(target_path)
             # Now we construct the parsed URL
@@ -241,14 +266,13 @@ class IntrasiteLinkParser:
             parsed_links[raw_link] = cast("str", cast("Sequence", parsed_url))
         # Finally, let's replace our links!
         # For each link attribute in each formatted field
-        for f, soup in self._iterate_object(obj):
-            for tag, attr_name, attr_value in self._iterate_valid_attrs(soup):
-                # If the link is in our dictionary of parsed links...
-                if attr_value in parsed_links:
-                    # We replace the link with its parsed version
-                    tag[attr_name] = parsed_links[attr_value]
-            # And we update the content of the field
-            setattr(obj, f, str(soup))
+        for html_tag, attr_name, attr_value in self._object_valid_attrs(
+            obj, update_field=True
+        ):
+            # If the link is in our dictionary of parsed links...
+            if attr_value in parsed_links:
+                # We replace the link with its parsed version
+                html_tag[attr_name] = parsed_links[attr_value]
 
 
 @dataclass(repr=False)
@@ -283,7 +307,7 @@ class SeagullObject:
     url: str | None = None
     template: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # If the object has a source path and base_path is None, retrieve the base path
         # from the settings using self.default_base_path_key
         if self.source_path and not self.base_path:
@@ -317,7 +341,7 @@ class SeagullObject:
 
         # If there's a source path, it must be relative to the base path
         if self.source_path and not self.source_path.is_relative_to(self.base_path):
-            raise InvalidObject(
+            raise InvalidObjectError(
                 f"The source path '{self.source_path}' is not a "
                 f"subpath of the base path '{self.base_path}'."
             )
@@ -325,7 +349,7 @@ class SeagullObject:
         # Check that mandatory fields are initialized
         for f in self.mandatory_fields:
             if not getattr(self, f):
-                raise InvalidObject(f"'{f}' can't be empty")
+                raise InvalidObjectError(f"'{f}' can't be empty")
 
     def _setting_key_fragments(self, field_name: str) -> list[str]:
         """Setting key fragments for formatting a field.
@@ -349,7 +373,7 @@ class SeagullObject:
     def _save_as_setting_key(self) -> str:
         return "_".join(self._setting_key_fragments("save_as"))
 
-    def as_dict(self, _recurse=None) -> dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         """Return a dictionary of all fields and extra metadata attributes.
         The `settings` field is not included.
         """
@@ -382,82 +406,7 @@ class SeagullObject:
             slugify_settings = self.settings.slugify_settings
         return slugify(self.title, **slugify_settings)
 
-    @classmethod
-    def _find_original_translations(cls, objs: list[Self]) -> list[Self]:
-        """Subroutine to identify the objects that are the original translation.
-
-        :param objs: List of candidate objects (assumed to be related).
-        :return: All objects that could be the original translation. Under normal
-        circumstances, there should only be a single element in this list.
-        """
-        # Log a warning if there are related items with the same lang attribute
-        for lang, items in groupby(objs, attrgetter("lang")):
-            items = list(items)
-            if len(items) > 1:
-                warning_with_paths(
-                    f"There are {len(items)} items with lang '{lang}'.",
-                    paths=[o.source_path for o in items],
-                )
-
-        # Valid candidates are objects with translation set to False...
-        candidates = [o for o in objs if not o.translation]
-        # ... Unless all the objects are marked as translations
-        if not candidates:
-            warning_with_paths(
-                f"All {len(objs)} items are marked as a translation.",
-                paths=[o.source_path for o in objs],
-            )
-            candidates = objs
-
-        # Find objects in default language, or fallback to all candidates
-        origs = [o for o in candidates if o.in_default_lang] or candidates
-        # Log a warning if we have more than one original object
-        if len(origs) > 1:
-            warning_with_paths(
-                f"All {len(objs)} items are marked as not translated.",
-                [o.source_path for o in origs],
-            )
-        return origs
-
-    @classmethod
-    def link_translations(
-        cls,
-        objs: list[SeagullObject],
-        translation_id: str | Collection[str] | None = None,
-    ) -> list[Self]:
-        """Find and link translations.
-
-        It updates the `translations` attribute of each object in `objs`.
-
-        :param objs: List of objects of the same type to search translations in.
-        :param translation_id: Attribute or collection of attributes keys. Two objects
-        are deemed to be related if they have the same value(s) for all of these
-        attributes. If this parameter is `None`, this method is a no-op.
-        :return: A list of original objects.
-        """
-
-        # No-op if translation_id evaluates to False
-        if not translation_id:
-            return objs
-        # Ensure we have a set
-        if isinstance(translation_id, str):
-            translation_id = {translation_id}
-        if not isinstance(translation_id, set):
-            translation_id = set(translation_id)
-
-        origs = []
-        # Group by translation id
-        objs = sorted(objs, key=attrgetter(*translation_id))
-        # For each group of related items, retrieve the originals and translations
-        for _, items in groupby(objs, attrgetter(*translation_id)):
-            items = list(items)
-            origs.extend(cls._find_original_translations(items))
-            # Cross-reference translations
-            for orig in items:
-                orig.translations.extend(trans for trans in items if orig != trans)
-        return origs
-
-    def update_intrasite_links(self, context: Context):
+    def update_intrasite_links(self, context: Context) -> None:
         """Refresh intra-site URLs.
 
         The URLs are updated in the content, as well as in metadata keys listed in the
@@ -480,8 +429,7 @@ class SeagullObject:
         parser = IntrasiteLinkParser(
             self.settings.intrasite_link_regex, valid_identifiers="static"
         )
-        result = {link.target for link in parser.extract(self)}
-        return result
+        return {link.target for link in parser.extract(self)}
 
     @reserved_property
     def extra_metadata(self) -> dict[str, str]:
@@ -538,6 +486,80 @@ class SeagullObject:
         if not self.settings.relative_urls:
             return self.settings.siteurl
         return str(Path(".").relative_to(self.save_as.parent, walk_up=True))
+
+    @classmethod
+    def _find_original_translations(cls, objs: list[Self]) -> list[Self]:
+        """Subroutine to identify the objects that are the original translation.
+
+        :param objs: List of candidate objects (assumed to be related).
+        :return: All objects that could be the original translation. Under normal
+        circumstances, there should only be a single element in this list.
+        """
+        # Log a warning if there are related items with the same lang attribute
+        for lang, items in groupby(objs, attrgetter("lang")):
+            if (items_count := len(list(items))) > 1:
+                warning_with_paths(
+                    f"There are {items_count} items with lang '{lang}'.",
+                    paths=[o.source_path for o in items],
+                )
+
+        # Valid candidates are objects with translation set to False...
+        candidates = [o for o in objs if not o.translation]
+        # ... Unless all the objects are marked as translations
+        if not candidates:
+            warning_with_paths(
+                f"All {len(objs)} items are marked as a translation.",
+                paths=[o.source_path for o in objs],
+            )
+            candidates = objs
+
+        # Find objects in default language, or fallback to all candidates
+        origs = [o for o in candidates if o.in_default_lang] or candidates
+        # Log a warning if we have more than one original object
+        if len(origs) > 1:
+            warning_with_paths(
+                f"All {len(objs)} items are marked as not translated.",
+                [o.source_path for o in origs],
+            )
+        return origs
+
+    @classmethod
+    def link_translations(
+        cls,
+        objs: list[SeagullObject],
+        translation_id: str | Collection[str] | None = None,
+    ) -> list[Self]:
+        """Find and link translations.
+
+        It updates the `translations` attribute of each object in `objs`.
+
+        :param objs: List of objects of the same type to search translations in.
+        :param translation_id: Attribute or collection of attributes keys. Two objects
+        are deemed to be related if they have the same value(s) for all of these
+        attributes. If this parameter is `None`, this method is a no-op.
+        :return: A list of original objects.
+        """
+
+        # No-op if translation_id evaluates to False
+        if not translation_id:
+            return objs
+        # Ensure we have a set
+        if isinstance(translation_id, str):
+            translation_id = {translation_id}
+        if not isinstance(translation_id, set):
+            translation_id = set(translation_id)
+
+        origs = []
+        # Group by translation id
+        objs = sorted(objs, key=attrgetter(*translation_id))
+        # For each group of related items, retrieve the originals and translations
+        for _, items in groupby(objs, attrgetter(*translation_id)):
+            items_list = list(items)
+            origs.extend(cls._find_original_translations(items_list))
+            # Cross-reference translations
+            for orig in items_list:
+                orig.translations.extend(trans for trans in items_list if orig != trans)
+        return origs
 
     # FIXME implement comparison with a string
     def __lt__(self, other: Self) -> bool:

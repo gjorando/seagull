@@ -1,6 +1,6 @@
 from io import StringIO
 from itertools import chain
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import docutils
 import docutils.core
@@ -16,13 +16,18 @@ from seagull.readers.reader import Reader
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from docutils.nodes import abbreviation as docutils_abbr
     from docutils.nodes import document as docutils_document
+    from docutils.nodes import field_body
+    from docutils.nodes import image as docutils_image
+
+    from seagull import Settings
 
 
 class SeagullHTMLTranslator(HTMLTranslator):
     """Tweaked version of the docutils HTML 5 translator class."""
 
-    def visit_abbreviation(self, node):
+    def visit_abbreviation(self, node: docutils_abbr) -> None:
         """
         The base docutils implementation is incomplete, lacking the `title` attribute.
         """
@@ -31,7 +36,7 @@ class SeagullHTMLTranslator(HTMLTranslator):
             attrs["title"] = node["explanation"]
         self.body.append(self.starttag(node, "abbr", "", **attrs))
 
-    def visit_image(self, node):
+    def visit_image(self, node: docutils_image):  # noqa: ANN201
         """
         Set an empty `alt` attribute so that docutils doesn't set it to src.
         """
@@ -42,13 +47,13 @@ class SeagullHTMLTranslator(HTMLTranslator):
 class FormattedFieldTranslator(SeagullHTMLTranslator):
     """HTML 5 translator class for formatted fields."""
 
-    def astext(self):
+    def astext(self) -> str:
         return "".join(self.body)
 
-    def visit_field_body(self, node):
+    def visit_field_body(self, node: field_body) -> None:
         pass
 
-    def depart_field_body(self, node):
+    def depart_field_body(self, node: field_body) -> None:
         pass
 
 
@@ -56,10 +61,10 @@ class RstReader(Reader):
     """reStructuredText reader class."""
 
     enabled = bool(docutils)
-    file_extensions = ["rst"]
+    file_extensions: ClassVar[list[str | None]] = ["rst"]
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, settings: Settings):
+        super().__init__(settings)
 
         lang_code = self.settings.default_lang
         if not get_language(lang_code):

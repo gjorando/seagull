@@ -1,5 +1,5 @@
 from dataclasses import fields
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from seagull.writers.writer import Writer
 
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 class HTMLWriter(Writer):
     """HTML writer class."""
 
-    file_extensions: list[str] = ["html", "htm"]
+    file_extensions: ClassVar[list[str | None]] = ["html", "htm"]
 
     def _parse_data(self, obj: SeagullObject, context: Context) -> str:
         # If an object doesn't have a template, its content is assumed to be final

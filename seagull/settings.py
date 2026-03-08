@@ -2,6 +2,7 @@ import gettext
 import locale
 import os
 import sys
+from abc import abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, field, fields
 from functools import partial
@@ -11,7 +12,7 @@ from inspect import getmembers
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from itertools import batched, permutations, product
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 from zoneinfo import ZoneInfo
 
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader, PrefixLoader
@@ -20,7 +21,7 @@ from seagull.decorators import extra_dataclass
 from seagull.log import logger
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection
+    from collections.abc import Callable, Collection, Generator
     from datetime import datetime
     from types import ModuleType
 
@@ -29,9 +30,16 @@ if TYPE_CHECKING:
     from seagull.contents import Article, Author, Category, Page, SeagullObject, Tag
 
 
-def order_by_factory(
+class Comparable[T](Protocol):
+    """Protocol for annotating comparable types."""
+
+    @abstractmethod
+    def __lt__(self: T, other: T, /) -> bool: ...
+
+
+def order_by_factory[T: Comparable](
     value: str,
-) -> tuple[Callable[[SeagullObject], tuple[Any, bool]], bool]:
+) -> tuple[Callable[[SeagullObject], T], bool]:
     """Convert an `*_ORDER_BY` setting to a key function and `reverse` parameter.
 
     See [the Python documentation](https://docs.python.org/3/howto/sorting.html)
@@ -44,7 +52,7 @@ def order_by_factory(
     # Special case basename: order by filename
     if value == "basename":
 
-        def key_func(obj: SeagullObject) -> Any:
+        def key_func(obj: SeagullObject) -> T:
             if obj.source_path:
                 return obj.source_path.name
             return obj.title
@@ -54,7 +62,7 @@ def order_by_factory(
             value = value.replace("reversed-", "", 1)
             reverse = True
 
-        def key_func(obj: SeagullObject) -> Any:
+        def key_func(obj: SeagullObject) -> object:
             return getattr(obj, value)
 
     return key_func, reverse
@@ -63,7 +71,7 @@ def order_by_factory(
 @contextmanager
 def temporary_locale(
     temp_locale: str, lc_category: int | tuple[int, ...] = locale.LC_ALL
-):
+) -> Generator[None]:
     """Context manager for running code with a temporary locale.
 
     Resets the locale back when exiting context.
@@ -231,7 +239,8 @@ class Settings:
     display_pages_on_menu: bool = True
     display_categories_on_menu: bool = True
 
-    def __post_init__(self):
+    # FIXME PLR0912, PLR0915
+    def __post_init__(self) -> None:  # noqa: PLR0912, PLR0915
         """Parse and normalize various settings."""
 
         # Ensure a path-like or list of path-like uses pathlib.Path
@@ -243,7 +252,7 @@ class Settings:
         def absolute_from_base(
             p: Path | str | list[Path | str], base: Path
         ) -> Path | list[Path]:
-            def _absolute_from_base(o):
+            def _absolute_from_base(o: Path) -> Path:
                 return o if o.is_absolute() else (base / o).resolve()
 
             p = ensure_paths(p)
@@ -251,7 +260,9 @@ class Settings:
                 return _absolute_from_base(p)
             return [_absolute_from_base(o) for o in p]
 
-        def mutually_exclusive_sources(includes: list[Path], excludes: list[Path]):
+        def mutually_exclusive_sources(
+            includes: list[Path], excludes: list[Path]
+        ) -> None:
             for p in includes:
                 if p not in excludes:
                     excludes.append(p)
@@ -323,17 +334,14 @@ class Settings:
         # FIXME idem
         for key in [f.name for f in fields(self) if f.name.endswith("_save_as")]:
             path = getattr(self, key)
-            if not path:
-                # None disables the rendering of the associated object
-                path = None
-            else:
-                path = Path(path)
+            # None disables the rendering of the associated object
+            path = Path(path) if path else None
             setattr(self, key, path)
 
         # Article, taxonomy and page paths are mutually exclusive
         # So add all paths for an object type to the excludes of all the other types
         mutex_types = ("article", "page", "author", "category", "tag")
-        for (includes, _), (_, excludes) in permutations(
+        for (i, _), (_, e) in permutations(
             batched(
                 (
                     getattr(self, f"{a}_{b}")
@@ -344,7 +352,7 @@ class Settings:
             ),
             2,
         ):
-            mutually_exclusive_sources(includes, excludes)
+            mutually_exclusive_sources(i, e)
 
         # Parse the IP address in bind
         if not isinstance(self.bind, (IPv4Address, IPv6Address)):
@@ -375,9 +383,11 @@ class Settings:
 
         # Set up the theme: if it's not a directory in the working directory, try
         # finding it in the installed themes
-        if not (theme_path := absolute_from_working_dir(self.theme).is_dir()):
-            if installed_themes_path:
-                theme_path = installed_themes_path / self.theme
+        if (
+            not (theme_path := absolute_from_working_dir(self.theme).is_dir())
+            and installed_themes_path
+        ):
+            theme_path = installed_themes_path / self.theme
         self.theme = theme_path
         # If the theme still doesn't exist, raise a RuntimeError
         if not self.theme.exists():
@@ -397,7 +407,7 @@ class Settings:
                     self.jinja_environment[k] = v
             # Default loader: template are searched for in the overrides first, then in
             # the theme
-            template_paths = self.theme_template_overrides + [self.theme / "templates"]
+            template_paths = [*self.theme_template_overrides, self.theme / "templates"]
             loaders: list[BaseLoader] = [FileSystemLoader(template_paths)]
             prefix_loaders = {}
             # If we have found an installed themes path, the next loader we try is the
@@ -437,7 +447,7 @@ class Settings:
                     logger.warning(
                         f"Cannot find translations for language '{self.default_lang}'."
                     )
-            install_gettext_translations(translations, True)
+            install_gettext_translations(translations, newstyle=True)
         else:
             logger.warning("Running without jinja2 internationalization.")
 
@@ -453,7 +463,7 @@ class Settings:
             self.seagull_class = getattr(module, cls_name)
 
     @classmethod
-    def from_settings_file(cls, settings_file: Path, **overrides) -> Settings:
+    def from_settings_file(cls, settings_file: Path, **overrides: dict) -> Settings:
         """Initialize settings from a settings file.
 
         Seagull settings are defined in Python files.
@@ -469,7 +479,7 @@ class Settings:
         return cls.from_module(module, **overrides)
 
     @classmethod
-    def from_module(cls, module: ModuleType, **overrides) -> Settings:
+    def from_module(cls, module: ModuleType, **overrides: dict) -> Settings:
         """Initialize settings from a python module.
 
         :param module: A settings module.
@@ -483,7 +493,7 @@ class Settings:
         # Defined settings fields
         base_fields = [f.name for f in fields(cls) if f != "_extra"]
 
-        def process_setting(dest: dict, extra: dict, key: str, value: Any):
+        def process_setting(dest: dict, extra: dict, key: str, value: object) -> None:
             if not cls.is_valid_param_key(key):
                 return
             key = key.lower()
@@ -515,7 +525,7 @@ class Settings:
         return cls(**context)
 
     @classmethod
-    def is_valid_param_key(cls, value: str):
+    def is_valid_param_key(cls, value: str) -> bool:
         """Validate a parameter key.
 
         Only uppercase setting keys are considered, and those starting with '_' are

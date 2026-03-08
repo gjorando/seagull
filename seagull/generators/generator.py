@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from seagull.contents import SeagullObject
-from seagull.exceptions import InvalidObject, SkippedFileException
+from seagull.exceptions import InvalidObjectError, SkippedFileError
 from seagull.log import logger
 from seagull.readers import Reader
 from seagull.writers import Writer
@@ -48,11 +48,11 @@ class Generator[T: SeagullObject](ABC):
                     self.context,
                     base_path=self.base_path,
                 )
-            except SkippedFileException:
+            except SkippedFileError:
                 # If the file was skipped, continue with the next file
                 logger.debug(f"Skipped '{log_path}'.")
                 continue
-            except InvalidObject:
+            except InvalidObjectError:
                 # If the file is invalid, log the error and continue with the next file
                 logger.exception(
                     f"Couldn't process '{log_path}'.",
@@ -80,7 +80,7 @@ class Generator[T: SeagullObject](ABC):
         """
         return Writer.from_extension(self.settings, obj.save_as.suffix)
 
-    def _add_failed_to_context(self, source_path: Path):
+    def _add_failed_to_context(self, source_path: Path) -> None:
         """Record a source file path that a generator failed to process.
 
         :param source_path: Source path.
@@ -109,7 +109,7 @@ class Generator[T: SeagullObject](ABC):
         origs.sort(key=sort_key, reverse=reverse)
         return origs
 
-    def _update_context(self, objs: list[T]):
+    def _update_context(self, objs: list[T]) -> None:
         """Update the shared context.
 
         :param objs: Objects to register in the context.
@@ -120,7 +120,7 @@ class Generator[T: SeagullObject](ABC):
             # Record the static links in the object as well
             self.context.static_links |= obj.static_links
 
-    def generate_context(self):
+    def generate_context(self) -> None:
         """Create the context of a generator.
 
         The default implementation calls `_create_objects`, `_link_translations` and
@@ -133,7 +133,7 @@ class Generator[T: SeagullObject](ABC):
         # Finally, we update the context
         self._update_context(self.all_content)
 
-    def generate_output(self):
+    def generate_output(self) -> None:
         """Generate the output of a generator."""
         obj: T
         for obj in self.all_content:
@@ -166,11 +166,11 @@ class Generator[T: SeagullObject](ABC):
         base_path = self.base_path
         # Group excluded paths by parent
         per_parent_exclude_paths = defaultdict(set)
-        for excluded_path in self.excluded_paths:
-            excluded_path = base_path / excluded_path
+        for ep in self.excluded_paths:
+            excluded_path = base_path / ep
             per_parent_exclude_paths[excluded_path.parent].add(excluded_path.name)
-        for valid_path in self.valid_paths:
-            valid_path = base_path / valid_path
+        for vp in self.valid_paths:
+            valid_path = base_path / vp
             if valid_path.is_dir(follow_symlinks=True):  # Walk directories
                 for current_directory, subdirectories, filenames in valid_path.walk(
                     follow_symlinks=True
@@ -217,7 +217,7 @@ class Generator[T: SeagullObject](ABC):
         """
 
     @abstractmethod
-    def add_object_to_context(self, obj: T):
+    def add_object_to_context(self, obj: T) -> None:
         """Add an object to the shared context.
 
         :param obj: Content to store.
@@ -232,5 +232,5 @@ class Generator[T: SeagullObject](ABC):
         generator.
         """
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.__class__.__name__
