@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}{{ SITENAME|striptags }} - Archives{% endblock %}
+{% block title %}{{ sitename|striptags }} - {{ _("Archives") }}{% endblock %}
 
 {% block content %}
-    <h2>Archives for {{ SITENAME }}</h2>
+    <h2>{% trans trimmed %}Archives for {{ sitename }}{% endtrans %}</h2>
 
     <dl>
-        {% for article in dates %}
+        {% for article in articles %}
             <dt>{{ article.locale_date }}</dt>
-            <dd><a href="{{ SITEURL }}/{{ article.url }}">{{ article.title }}</a></dd>
+            <dd><a href="{{ siteurl }}/{{ article.url }}">{{ article.title }}</a></dd>
         {% endfor %}
     </dl>
 {% endblock %}

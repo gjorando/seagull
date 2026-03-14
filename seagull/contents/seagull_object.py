@@ -1,343 +1,104 @@
-import re
-import urllib.parse
+import contextlib
 from dataclasses import dataclass, field, fields
-from functools import total_ordering
-from itertools import groupby
-from operator import attrgetter
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self, cast
-from urllib.parse import urlparse, urlunparse
+from typing import TYPE_CHECKING, ClassVar
 
-from bs4 import BeautifulSoup
-from jinja2.exceptions import TemplateNotFound
+from jinja2 import TemplateNotFound
 from slugify import slugify
 
-from seagull.exceptions import InvalidObjectError
-from seagull.log import logger, warning_with_paths
+from seagull.exceptions import InvalidObjectError, SkippedFileError
+from seagull.intrasite_link_parser import IntrasiteLinkParser
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable, Sequence
+    from collections.abc import Iterable
+    from typing import Any, Self
 
-    from bs4 import Tag
+    from jinja2 import Template
 
-    from seagull.contents import Taxonomy
     from seagull.context import Context
     from seagull.settings import Settings
 
 
-def reserved_property(fget: Callable) -> property:
-    """Create a read-only property for a seagull object.
-
-    If the user tries to set metadata with the same name as a Python property of the
-    seagull object, it will raise a more descriptive `AttributeError`.
-
-    :param fget: Getter for the property.
-    :return: A `property` object.
-    """
-
-    def fset(self: SeagullObject, _: object) -> None:
-        """Failsafe setter for the property.
-
-        :raise InvalidObject: Always.
-        """
-        raise InvalidObjectError(
-            f"'{fget.__name__}' is a reserved metadata key for objects "
-            f"of type '{self.__class__.__name__}'."
-        )
-
-    return property(fget, fset)
-
-
-class IntrasiteLink(NamedTuple):
-    """Data associated with an intrasite link."""
-
-    raw_link: str
-    identifier: str
-    target: Path | str
-
-
-class IntrasiteLinkParser:
-    """A helper parser to extract intrasite links.
-
-    Upon feeding it a seagull object, it extracts the intrasite links in it. Links are
-    formatted to be relative to the base path of the object.
-    """
-
-    valid_attrs = (
-        "href",
-        "src",
-        "poster",
-        "data",
-        "cite",
-        "formaction",
-        "action",
-        "content",
-    )
-    path_identifiers = ("static", "filename", "attach")
-
-    def __init__(
-        self,
-        intrasite_link_regex: str,
-        valid_identifiers: str | list[str] | None = None,
-    ):
-        """Initialize the parser.
-
-        :param intrasite_link_regex: Regex for identifying the intrasite link
-        identifier.
-        :param valid_identifiers: Optional identifier or list of identifier to filter
-        links.
-        """
-        self.regex_str: str = rf"{intrasite_link_regex}(?P<target>.*)"
-        self.regex: re.Pattern = re.compile(self.regex_str, re.VERBOSE)
-        if not valid_identifiers:
-            valid_identifiers = None
-        elif isinstance(valid_identifiers, str):
-            valid_identifiers = [valid_identifiers]
-        self.valid_identifiers: list[str] | None = valid_identifiers
-
-    def _has_valid_attr(self, tag: Tag) -> bool:
-        """Filter out tags that don't have a valid link attribute."""
-        return any(tag.has_attr(attr) for attr in self.valid_attrs)
-
-    def _object_valid_attrs(
-        self, obj: SeagullObject, *, update_field: bool = False
-    ) -> Iterable[tuple[Tag, str, str]]:
-        """Iterate over every valid attribute of all HTML tags in the object.
-
-        Both the content of the object and the formatted fields are searched for.
-
-        :param obj: A seagull object.
-        :param update_field: If `True` each field is updated once all its attributes
-        have been iterated over. This means that the `Tag` object can be updated, it
-        will be reflected in the value of the field.
-        :return: Iterate a tuple of `(bs4_tag, attr_name, attr_value)`.
-        """
-        for field_name in [*obj.settings.formatted_fields, "content"]:
-            # Soup time if the field exists in the object
-            if value := getattr(obj, field_name, None):
-                soup = BeautifulSoup(value, features=obj.settings.html_parser)
-                # Look for all tags with a valid link attribute
-                for html_tag in soup(self._has_valid_attr):
-                    # For every link attribute
-                    for attr_name, attr_value in html_tag.attrs.items():
-                        # Yield if the attribute is an accepted attribute
-                        if attr_name in self.valid_attrs:
-                            yield html_tag, attr_name, attr_value
-                # And we update the content of the field if required
-                if update_field:
-                    setattr(obj, field_name, str(soup))
-
-    def extract(self, obj: SeagullObject) -> set[IntrasiteLink]:
-        """Retrieve the intrasite links.
-
-        :param obj: A seagull object. Formatted fields are parsed as well.
-        :return: A set of absolute paths.
-        """
-        links = set()
-        # Retrieve the links from all formatted fields, including the content itself
-        for _, _, attr_value in self._object_valid_attrs(obj):
-            # Go to the next attribute if we don't have a match
-            if not (match := self.regex.match(attr_value)):
-                continue
-            # If we have a list of valid types, skip links of another type
-            what = match.group("what").lower().strip()
-            if self.valid_identifiers and what not in self.valid_identifiers:
-                continue
-            # Convert %xx escapes back to unicode
-            target = urllib.parse.unquote(match.group("target"))
-            # If the target is a path
-            if what in self.path_identifiers:
-                target = Path(target)
-                # Make the path absolute:
-                # - if it has a leading slash path, it is rooted in the base path
-                # - otherwise, it is relative to the source_path folder
-                target = (
-                    obj.base_path
-                    / (
-                        # path.relative_to("/") if path.is_relative_to("/") removes
-                        # the leading slash
-                        target.relative_to("/")
-                        if target.is_relative_to("/")
-                        else obj.relative_source_path.parent / target
-                    )
-                ).resolve()
-            link = IntrasiteLink(raw_link=attr_value, identifier=what, target=target)
-            links.add(link)
-        return links
-
-    @staticmethod
-    def _target_link_from_source_path(
-        context: Context, identifier: str, target: str | Path
-    ) -> str | None:
-        """Get the target link from content/static file.
-
-        :param context: Shared context.
-        :param identifier: An identifier among `self.path_identifiers`.
-        :param target: The source path of the target.
-        :return: The target link, or `None` if there is no content or static file for
-        this source path.
-        """
-        context_key = (
-            "generated_content" if identifier == "filename" else "static_content"
-        )
-        # TODO handle attached files
-        if not (target_obj := getattr(context, context_key).get(target)):
-            return None
-        return target_obj.url
-
-    @staticmethod
-    def _target_link_from_taxon(
-        taxa: list[Taxonomy],
-        taxon_name: str | Path,
-    ) -> str | None:
-        """Get the target link from a taxonomy.
-        :param taxa: List of taxonomies to search..
-        :param taxon_name: The name of the taxon.
-        :return: The target link, or `None` if there is no taxonomy with this type and
-        name.
-        """
-        # Try fetching the taxon by name
-        for taxon in taxa:
-            if taxon.name == taxon_name:
-                return taxon.url
-        return None
-
-    def update(self, obj: SeagullObject, context: Context) -> None:
-        """Update intrasite links using data from a `Context` object.
-
-        :param obj: A seagull object. Formatted fields are parsed as well.
-        :param context: Shared context to use for link replacement.
-        """
-        # We extract our list of links
-        links = self.extract(obj)
-        # Then, we create a replacement for each intrasite reference
-        parsed_links: dict[str, str] = {}
-        for raw_link, identifier, target in links:
-            match identifier:
-                case _ if identifier in self.path_identifiers:  # Static/content files
-                    if not (
-                        target_path := self._target_link_from_source_path(
-                            context, identifier, target
-                        )
-                    ):
-                        logger.warning(
-                            f"'{target}': unknown content in '{obj.source_path}'."
-                        )
-                case "index":  # Index direct template
-                    # FIXME allow for any direct template
-                    target_path = obj.settings.index_url
-                case _:  # Taxonomies, or unknown identifier
-                    # Try getting the appropriate list of taxa
-                    try:
-                        _, taxa = context.taxa_by_name(identifier)
-                    except KeyError:
-                        logger.warning(
-                            f"'{identifier}': unknown link identifier in "
-                            f"'{obj.source_path}'."
-                        )
-                        continue
-                    if not (target_path := self._target_link_from_taxon(taxa, target)):
-                        logger.warning(
-                            f"'{target}': unknown {identifier.lower()} in "
-                            f"'{obj.source_path}'."
-                        )
-            # At this point, we should have a target path, relative to the output path
-            target_path = Path(target_path)
-            # Now we construct the parsed URL
-            if obj.settings.relative_urls:
-                # If relative_urls is True, the base is the URL of the current object
-                base_url = obj.url
-            else:
-                # Otherwise, the base is the site URL
-                base_url = obj.settings.siteurl
-                # And we make our target path "absolute"
-                target_path = Path("/") / target_path
-            # Extract the path component from the base URL
-            base_url = urlparse(base_url)
-            base_url_path = Path(base_url.path)
-            # If the base path ends with a slash, we walk up one step
-            if not base_url.path.endswith("/"):
-                base_url_path = base_url_path.parent
-            # Now, we make the target path relative to our base
-            joined_path = target_path.relative_to(base_url_path, walk_up=True)
-            # We unparse the URL to reconstruct the final URL
-            parsed_url = urlunparse(base_url._replace(path=str(joined_path)))
-            # Add it to our dictionary of parsed links
-            parsed_links[raw_link] = cast("str", cast("Sequence", parsed_url))
-        # Finally, let's replace our links!
-        # For each link attribute in each formatted field
-        for html_tag, attr_name, attr_value in self._object_valid_attrs(
-            obj, update_field=True
-        ):
-            # If the link is in our dictionary of parsed links...
-            if attr_value in parsed_links:
-                # We replace the link with its parsed version
-                html_tag[attr_name] = parsed_links[attr_value]
-
-
-@dataclass(repr=False)
-@total_ordering
+@dataclass(order=True)
 class SeagullObject:
-    """Base class for seagull objects.
+    """Base class for seagull objects."""
 
-    A seagull object holds information about a conceptual element of a seagull site.
-    """
-
-    mandatory_fields: ClassVar[tuple[str, ...]] = (
-        "title",
+    MANDATORY_FIELDS: ClassVar[tuple[str, ...]] = (
         "slug",
         "save_as",
         "url",
-        "lang",
+        "base_path",
     )
-    # For 99% of objects, the default base path is the content path
-    default_base_path_key: ClassVar[str] = "path"
+    """Fields that should be set.
 
-    # settings, content, source_path and base_path should always be the first attributes
-    settings: Settings = field(repr=False)
-    content: str = ""
-    source_path: Path | None = None  # Absolute source path
-    base_path: Path | None = None
-    translation: bool = False
-    translations: list[SeagullObject] = field(default_factory=list, init=False)
-    title: str = ""
-    slug: str = ""
-    lang: str = ""
-    save_as: Path | None = None
-    url: str | None = None
-    template: str | None = None
+    What it means is that they can't evaluate to `False` at the end of `__post_init__`.
+    """
+
+    settings: Settings = field(compare=False, repr=False)
+    """Settings associated with the object."""
+    content: str = field(default="", compare=False, repr=False)
+    """Content of the object."""
+    source_path: Path | None = field(default=None, compare=False, repr=False)
+    """Source path, if the object was created from a file."""
+    base_path: Path | None = field(default=None, compare=False, repr=False)
+    """If the object has a source path, base path associated with it."""
+    title: str = field(default="", compare=False, repr=False)
+    """Title for the object."""
+    slug: str = field(default="", compare=True, repr=True)
+    """Slug: this is used to set an object apart.
+
+    Objects with the same slug should have a different lang.
+    """
+    lang: str = field(default="", compare=True, repr=True)
+    """Lang of the object."""
+    save_as: Path | None = field(default="", compare=False, repr=False)
+    """Destination path for the object."""
+    url: str | None = field(default=None, compare=False, repr=False)
+    """URL for the object."""
+    template: str = field(default="", compare=False, repr=False)
+    """Template for rendering the object."""
+    extra_metadata: dict[str, str] = field(
+        default_factory=dict, compare=False, repr=False
+    )
+    """Additional metadata for the object."""
+    in_default_lang: bool = field(default=True, compare=False, init=False, repr=False)
+    """Whether the object is in the default lang."""
+    translations: list[SeagullObject] = field(
+        default_factory=list, init=False, compare=False, repr=False
+    )
+    """List of translations associated with the object."""
 
     def __post_init__(self) -> None:
-        # If the object has a source path and base_path is None, retrieve the base path
-        # from the settings using self.default_base_path_key
-        if self.source_path and not self.base_path:
-            self.base_path = getattr(self.settings, self.default_base_path_key)
-        # Generate a slug if required
-        if not self.slug:
-            self.slug = self._slugify()
-        # Fallback to the default lang
-        if not self.lang:
-            self.lang = self.settings.default_lang
-        # Generate the destination path if required
-        if self.save_as is None:
-            self.save_as = self._save_as()
-        # Generate the url if required
-        if self.url is None:
-            self.url = self._url()
-        # Cache the template object for the seagull object
-        self.template_object = None
-        if self.template is not None:
-            # Try every possible extension
-            for ext in self.settings.template_extensions:
-                try:
-                    self.template_object = self.settings.jinja_environment.get_template(
-                        self.template + ext
-                    )
-                    break
-                except TemplateNotFound:
-                    pass
-            else:
-                raise TemplateNotFound(self.template)
+        """Post-init routines.
+
+        It ensures that the object is valid. Notably, for every required field in
+        `self.__class__.MANDATORY_FIELDS`, it tries to auto-compute them. The class
+        shall define a property with the name `_<field_name>` for every property that
+        can be auto-computed.
+
+        :raise InvalidObjectError: If a mandatory field is missing, or if the source
+        path is not a subdirectory of the base path.
+        :raise SkippedFileError: If `save_as` is `None` and couldn't be initialized with
+        a default setting key.
+        """
+        # If the object has a lang, or should have one
+        if "lang" in self.MANDATORY_FIELDS or self.lang:
+            # Ensure it is set with the generated fallback
+            self.lang = self.lang or self._lang
+            # If that lang is not the default lang, update its settings so that it uses
+            # the localized settings for this lang; if there's no localized settings for
+            # the object's lang, fallback to default settings
+            if self.lang != self.settings.default_lang:
+                # Mark the object has not in the default lang
+                self.in_default_lang = False
+                with contextlib.suppress(ValueError):
+                    self.settings = self.settings.localized_settings(self.lang)
+
+        # Try calling the auto-compute properties for mandatory fields
+        for key in self.MANDATORY_FIELDS:
+            # '_<field>' are our auto-generation property fallbacks
+            value = getattr(self, key) or getattr(self, f"_{key}", "")
+            setattr(self, key, value)
 
         # If there's a source path, it must be relative to the base path
         if self.source_path and not self.source_path.is_relative_to(self.base_path):
@@ -346,71 +107,87 @@ class SeagullObject:
                 f"subpath of the base path '{self.base_path}'."
             )
 
-        # Check that mandatory fields are initialized
-        for f in self.mandatory_fields:
+        # Finally, check that all mandatory fields are initialized
+        for f in self.MANDATORY_FIELDS:
             if not getattr(self, f):
-                raise InvalidObjectError(f"'{f}' can't be empty")
+                raise InvalidObjectError(f"'{f}' can't be empty.")
 
-    def _setting_key_fragments(self, field_name: str) -> list[str]:
-        """Setting key fragments for formatting a field.
+    @classmethod
+    def from_parsed_metadata(
+        cls,
+        settings: Settings,
+        context: Context,
+        content: str,
+        source_path: Path,
+        base_path: Path,
+        **metadata: object | str,
+    ) -> Self:
+        """Create a new seagull object based on raw parsed metadata.
 
-        Used for the `save_as` and `url` fields. Join the returned list with underscores
-        to get the setting attribute.
-
-        :param: Field associated with the setting key.
-        :return: A list of fragments for deducing the setting key.
+        :param settings: Settings for the object.
+        :param context: Shared context.
+        :param content: Parsed content for the object.
+        :param source_path: Absolute path of the source file.
+        :param base_path: Base path of the source file.
+        :param metadata: Raw metadata parsed by the `Reader` object.
+        :return: A new seagull object.
+        :raise InvalidObjectError: If a valid metadata key has an invalid value that
+        cannot be simply discarded.
+        :raise SkippedFileError: If the file should be skipped.
         """
-        class_fragment = self.__class__.__name__.lower()
-        lang_fragment = "lang" if self.lang != self.settings.default_lang else None
-        # Filter-out empty fragments
-        return [f for f in [class_fragment, lang_fragment, field_name] if f]
+        # Unused argument
+        del context
 
-    @property
-    def _url_setting_key(self) -> str:
-        return "_".join(self._setting_key_fragments("url"))
+        parsed_metadata: dict[str, Any] = {}
+        for key, value in metadata.items():
+            match key:
+                # Strip these values
+                case "slug" | "template":
+                    parsed_value = value.strip() or None
+                # Strip and lowercase these values
+                case "lang":
+                    parsed_value = value.lower().strip() or None
+                # Convert save_as to a path
+                case "save_as":
+                    parsed_value = Path(value) if value.strip() else None
+                case _:
+                    parsed_value = value
 
-    @property
-    def _save_as_setting_key(self) -> str:
-        return "_".join(self._setting_key_fragments("save_as"))
+            # None values are discarded
+            if parsed_value is not None:
+                parsed_metadata[key.lower()] = parsed_value
 
-    def as_dict(self) -> dict[str, Any]:
-        """Return a dictionary of all fields and extra metadata attributes.
-        The `settings` field is not included.
-        """
-        return {
-            f.name: getattr(self, f.name) for f in fields(self) if f.name != "settings"
-        } | self.extra_metadata
+        # Finally, separate extra_metadata keys
+        valid_fields = [f.name for f in fields(cls)]
+        extra_metadata = {
+            k: v for k, v in parsed_metadata.items() if k not in valid_fields
+        }
+        parsed_metadata = {
+            k: v for k, v in parsed_metadata.items() if k in valid_fields
+        }
+        parsed_metadata["extra_metadata"] = extra_metadata
 
-    def _save_as(self) -> Path | None:
-        """Auto-generate the destination path."""
-        setting_key = self._save_as_setting_key
-        output_path = getattr(self.settings, setting_key, None)
-        if not output_path:
-            return None
-        output_path = str(output_path).format(**self.as_dict())
-        return Path(output_path)
+        return cls(
+            settings=settings,
+            content=content,
+            source_path=source_path,
+            base_path=base_path,
+            **parsed_metadata,
+        )
 
-    def _url(self) -> str:
-        """Auto-generate the url."""
-        setting_key = self._url_setting_key
-        url = getattr(self.settings, setting_key)
-        return url.format(**self.as_dict())
-
-    def _slugify(self) -> str:
-        """Auto-generate a slug."""
-        # FIXME ensure unique slugs per object type
-        # Retrieve the per-object type slugify settings if they exist
-        settings_key = f"{self.__class__.__name__.lower()}_slugify_settings"
-        if (slugify_settings := getattr(self.settings, settings_key, None)) is None:
-            # Fallback to default slugify settings
-            slugify_settings = self.settings.slugify_settings
-        return slugify(self.title, **slugify_settings)
+    @classmethod
+    def all_object_types(cls) -> Iterable[type[SeagullObject]]:
+        """Yield all subclasses."""
+        for subcls in cls.__subclasses__():
+            yield from subcls.all_object_types()
+            yield subcls
 
     def update_intrasite_links(self, context: Context) -> None:
-        """Refresh intra-site URLs.
+        """Refresh intra-site links.
 
         The URLs are updated in the content, as well as in metadata keys listed in the
-        `FORMATTED_FIELDS` setting.
+        `settings.formatted_fields`. This includes field metadata, as well as extra
+        metadata keys.
 
         :param context: Shared `Context` object.
         """
@@ -418,8 +195,156 @@ class SeagullObject:
         parser = IntrasiteLinkParser(self.settings.intrasite_link_regex)
         parser.update(self, context)
 
-    # FIXME should be cached I guess
-    @reserved_property
+    def link_translations(self, objs: Iterable[Self]) -> None:
+        """Find and link translations.
+
+        It updates `self.translations`.
+
+        :param objs: Objects of the same type to search for translations.
+        """
+        self.translations.extend(
+            filter(
+                # Look for objects with the same slug
+                lambda o: o.slug == self.slug
+                # Do not put `self` in its own list of translations
+                and o is not self
+                # Do not put the object twice in the list of translations
+                and o not in self.translations,
+                objs,
+            )
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return all fields and extra metadata (excluding the settings).
+
+        :return: A shallow-copied dictionary.
+        """
+        return {
+            f.name: getattr(self, f.name)
+            for f in fields(self)
+            if f.name not in ("settings", "extra_metadata")
+        } | self.extra_metadata
+
+    def _field_setting_key(self, field_name: str) -> str:
+        """Compute the setting key for a given field.
+
+        :param field_name: Name of the field for the associated setting key.
+        :return: Appropriate setting key for the field, depending on the state of the
+        object. Typically, if the object is not in the default lang, the setting key is
+        different.
+        """
+        class_fragment = self.__class__.__name__.lower()
+        lang_fragment = "" if self.in_default_lang else "lang"
+        return "_".join(f for f in (class_fragment, lang_fragment, field_name) if f)
+
+    @property
+    def _slug_source(self) -> str:
+        """Base value to parse the auto-generated slug.
+
+        :return: It uses `settings.slugify_source` to return the raw value to use for
+        the slug. This setting can either be `basename`, which yields the source file
+        name, or the name of a field or extra metadata. If this yields an empty value,
+        it falls back to the `title` attribute.
+        """
+        match self.settings.slugify_source:
+            case "basename":
+                if self.source_path:
+                    return self.source_path.stem
+            case _ as key:
+                # Try retrieving an attribute first
+                with contextlib.suppress(AttributeError):
+                    return str(getattr(self, key))
+                # Try retrieving an extra metadata next
+                with contextlib.suppress(KeyError):
+                    return str(self.extra_metadata[key])
+        # Finally, fall back to title
+        return self.title
+
+    @property
+    def _slug(self) -> str:
+        """Auto-generate a slug.
+
+        :return: A slug generated with the object's slugify settings.
+        """
+        # Try to get slugify settings for this specific type of object
+        if (
+            slugify_settings := getattr(
+                self.settings,
+                f"{self.__class__.__name__.lower()}_slugify_settings",
+                None,
+            )
+        ) is None:
+            # Fallback to default slugify settings
+            slugify_settings = self.settings.slugify_settings
+        return slugify(self._slug_source, **slugify_settings)
+
+    @property
+    def _save_as(self) -> Path:
+        """Auto-generate the destination path.
+
+        :return: A value for `self.save_as`, computed from the appropriate settings'
+        `*_save_as` value
+        :raise SkippedFileError: If there is no valid setting key for this type of
+        object.
+        """
+        output_path = getattr(self.settings, self._field_setting_key("save_as"), None)
+        if not output_path:
+            raise SkippedFileError(
+                "No `save_as` value could be computed for the object."
+            )
+        output_path = str(output_path).format(**self.as_dict())
+        return Path(output_path)
+
+    @property
+    def _url(self) -> str:
+        """Auto-generate the url."""
+        url = getattr(self.settings, self._field_setting_key("url"))
+        return url.format(**self.as_dict())
+
+    @property
+    def _lang(self) -> str:
+        """Auto-compute the lang."""
+        return self.settings.default_lang
+
+    @property
+    def _base_path(self) -> Path:
+        """Auto-compute the base path."""
+        return self.settings.path
+
+    @property
+    def _template(self) -> str:
+        """Auto-compute the template name.
+
+        :return: By default, the template name is the lowercase name of the object
+        class.
+        """
+        return self.__class__.__name__.lower()
+
+    @property
+    def jinja_context(self) -> dict[str, Any]:
+        """Context dictionary for Jinja templates rendering."""
+        return {
+            # The object can be accessed via the generic attribute "obj", or via its
+            # type name
+            "obj": self,
+            self.__class__.__name__.lower(): self,
+            "siteurl": self.relative_url,
+            "output_file": self.save_as,
+        }
+
+    @property
+    def jinja_template(self) -> Template:
+        """Jinja rendering template for the object.
+
+        :return: A `jinja2.Template` object.
+        :raise TemplateNotFound: if there is no valid template.
+        """
+        for ext in self.settings.template_extensions:
+            with contextlib.suppress(TemplateNotFound):
+                return self.settings.jinja_env_object.get_template(self.template + ext)
+        raise TemplateNotFound(self.template)
+
+    @property
     def static_links(self) -> set[Path]:
         """Discovered static links in the object.
 
@@ -431,144 +356,27 @@ class SeagullObject:
         )
         return {link.target for link in parser.extract(self)}
 
-    @reserved_property
-    def extra_metadata(self) -> dict[str, str]:
-        """User-defined metadata.
+    @property
+    def relative_source_path(self) -> Path | None:
+        """Source path relative to the base path.
 
-        This returns a mapping of copies of all user-defined metadata. It makes use of
-        the `__extra_dataclass__attrs__` of dataclasses decorated with
-        `seagull.utils.extra_dataclass`.
-
-        As the return dictionary stores values, not references, editing it won't
-        modify the actual attributes stored in the class. To edit the attributes, use
-        `getattr` or the dot notation instead.
-
-        :return: A dictionary of metadata attributes. If there is no user-defined
-        metadata keys, it returns an empty dictionary.
+        :return: `None` if there is no source path.
         """
-        if hasattr(self, "__extra_dataclass__attrs__"):
-            return {k: getattr(self, k) for k in self.__extra_dataclass__attrs__}
-        return {}
-
-    @reserved_property
-    def relative_source_path(self) -> Path:
-        """Source path relative to the base path."""
+        if not self.source_path:
+            return None
         return self.source_path.relative_to(self.base_path)
 
-    @reserved_property
-    def jinja_context(self) -> dict[str, Any]:
-        """Context dictionary for Jinja templates rendering.
-
-        It is typically added to `seagull.Context` to create the rendering context for
-        Jinja.
-        """
-        return {
-            # The object can be accessed via the generic attribute "obj", or via its
-            # type name
-            "obj": self,
-            self.__class__.__name__.lower(): self,
-            "siteurl": self.relative_siteurl,
-            "output_file": self.save_as,
-        }
-
-    @reserved_property
-    def in_default_lang(self) -> bool:
-        """Whether the object is in the default language."""
-        return self.lang == self.settings.default_lang
-
-    @reserved_property
-    def relative_siteurl(self) -> str:
+    @property
+    def relative_url(self) -> str:
         """Relative site URL.
 
-        If `RELATIVE_URLS` is `False`, this returns `SITEURL`. Otherwise, it returns the
-        path to the site root, relative to the current object's output directory.
+        :return: If `self.settings.relative_urls` is `False`, this returns
+        `self.settings.site_url`. Otherwise, it returns the path to the site root,
+        relative to the current object's output directory.
         """
         if not self.settings.relative_urls:
             return self.settings.siteurl
         return str(Path(".").relative_to(self.save_as.parent, walk_up=True))
-
-    @classmethod
-    def _find_original_translations(cls, objs: list[Self]) -> list[Self]:
-        """Subroutine to identify the objects that are the original translation.
-
-        :param objs: List of candidate objects (assumed to be related).
-        :return: All objects that could be the original translation. Under normal
-        circumstances, there should only be a single element in this list.
-        """
-        # Log a warning if there are related items with the same lang attribute
-        for lang, items in groupby(objs, attrgetter("lang")):
-            if (items_count := len(list(items))) > 1:
-                warning_with_paths(
-                    f"There are {items_count} items with lang '{lang}'.",
-                    paths=[o.source_path for o in items],
-                )
-
-        # Valid candidates are objects with translation set to False...
-        candidates = [o for o in objs if not o.translation]
-        # ... Unless all the objects are marked as translations
-        if not candidates:
-            warning_with_paths(
-                f"All {len(objs)} items are marked as a translation.",
-                paths=[o.source_path for o in objs],
-            )
-            candidates = objs
-
-        # Find objects in default language, or fallback to all candidates
-        origs = [o for o in candidates if o.in_default_lang] or candidates
-        # Log a warning if we have more than one original object
-        if len(origs) > 1:
-            warning_with_paths(
-                f"All {len(objs)} items are marked as not translated.",
-                [o.source_path for o in origs],
-            )
-        return origs
-
-    @classmethod
-    def link_translations(
-        cls,
-        objs: list[SeagullObject],
-        translation_id: str | Collection[str] | None = None,
-    ) -> list[Self]:
-        """Find and link translations.
-
-        It updates the `translations` attribute of each object in `objs`.
-
-        :param objs: List of objects of the same type to search translations in.
-        :param translation_id: Attribute or collection of attributes keys. Two objects
-        are deemed to be related if they have the same value(s) for all of these
-        attributes. If this parameter is `None`, this method is a no-op.
-        :return: A list of original objects.
-        """
-
-        # No-op if translation_id evaluates to False
-        if not translation_id:
-            return objs
-        # Ensure we have a set
-        if isinstance(translation_id, str):
-            translation_id = {translation_id}
-        if not isinstance(translation_id, set):
-            translation_id = set(translation_id)
-
-        origs = []
-        # Group by translation id
-        objs = sorted(objs, key=attrgetter(*translation_id))
-        # For each group of related items, retrieve the originals and translations
-        for _, items in groupby(objs, attrgetter(*translation_id)):
-            items_list = list(items)
-            origs.extend(cls._find_original_translations(items_list))
-            # Cross-reference translations
-            for orig in items_list:
-                orig.translations.extend(trans for trans in items_list if orig != trans)
-        return origs
-
-    # FIXME implement comparison with a string
-    def __lt__(self, other: Self) -> bool:
-        """Seagull objects are sorted by title.
-
-        Because this class is decorated with `functools.total_ordering`, the other
-        comparison operators are automatically created.
-        """
-        return self.title < other.title
 
     def __str__(self) -> str:
         """The string representation of an object is its slug.
@@ -576,7 +384,3 @@ class SeagullObject:
         This is useful for the `*_SAVE_AS` and `*_URL` settings, among other things.
         """
         return self.slug
-
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"<{class_name}: slug='{self.slug}', source_path='{self.source_path}'>"

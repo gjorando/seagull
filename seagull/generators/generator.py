@@ -1,12 +1,14 @@
 import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from itertools import groupby
+from operator import attrgetter
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from seagull.contents import SeagullObject
 from seagull.exceptions import InvalidObjectError, SkippedFileError
-from seagull.log import logger
+from seagull.log import logger, warning_with_paths
 from seagull.readers import Reader
 from seagull.writers import Writer
 
@@ -28,9 +30,8 @@ class Generator[T: SeagullObject](ABC):
     def __init__(self, settings: Settings, context: Context):
         self.settings = settings
         self.context = context
-        # Record generated content, sorted by status
+        # Record generated content
         self.all_content: list[T] = []
-        self.original_content: list[T] = []
 
     def _create_objects(self) -> list[T]:
         """Create the objects.
@@ -39,7 +40,7 @@ class Generator[T: SeagullObject](ABC):
         """
         all_content = []
         for source_path in self.files:
-            log_path = source_path.relative_to(self.base_path)
+            log_path = source_path.relative_to(self.base_path.parent)
             # Parse the file
             try:
                 obj: T = self._get_reader(source_path).read_file(
@@ -48,9 +49,11 @@ class Generator[T: SeagullObject](ABC):
                     self.context,
                     base_path=self.base_path,
                 )
-            except SkippedFileError:
+            except SkippedFileError as e:
                 # If the file was skipped, continue with the next file
-                logger.debug(f"Skipped '{log_path}'.")
+                if logger.level == logging.DEBUG:
+                    logger.exception(e, exc_info=True)
+                logger.info(f"Skipped '{log_path}'.")
                 continue
             except InvalidObjectError:
                 # If the file is invalid, log the error and continue with the next file
@@ -70,7 +73,7 @@ class Generator[T: SeagullObject](ABC):
         :param source_path: Source path of the file to parse.
         :return: A `Reader` instance.
         """
-        return Reader.from_extension(self.settings, source_path.suffix)
+        return Reader.from_extension(source_path.suffix)(self.settings)
 
     def _get_writer(self, obj: T) -> Writer:
         """Retrieve the appropriate writer for an object.
@@ -78,36 +81,14 @@ class Generator[T: SeagullObject](ABC):
         :param obj: Seagull object to write.
         :return: A `Writer` instance.
         """
-        return Writer.from_extension(self.settings, obj.save_as.suffix)
+        return Writer.from_extension(obj.save_as.suffix)(self.settings)
 
     def _add_failed_to_context(self, source_path: Path) -> None:
         """Record a source file path that a generator failed to process.
 
         :param source_path: Source path.
         """
-        self.context.failed_source_paths.append(source_path)
-
-    def _link_translations(self, objs: list[T]) -> list[T]:
-        """Link translations.
-
-        :param objs: Objects to process.
-        :return: List of objects that aren't translations
-        """
-        class_name = self.content_class.__name__.lower()
-        # Get the key for the groupby operation
-        translation_id = getattr(self.settings, f"{class_name}_translation_id", None)
-        # Get the order_by setting (fallback to ordering by title)
-        sort_key, reverse = getattr(
-            self.settings, f"{class_name}_order_by", (lambda o: o.title, False)
-        )
-
-        # Link translations together
-        origs = self.content_class.link_translations(
-            objs, translation_id=translation_id
-        )
-        # Sort original content
-        origs.sort(key=sort_key, reverse=reverse)
-        return origs
+        self.context.failed_source_paths.add(source_path)
 
     def _update_context(self, objs: list[T]) -> None:
         """Update the shared context.
@@ -120,17 +101,38 @@ class Generator[T: SeagullObject](ABC):
             # Record the static links in the object as well
             self.context.static_links |= obj.static_links
 
+    def add_object_to_context(self, obj: T) -> None:
+        """Add an object to the shared context.
+
+        :param obj: Content to store.
+        """
+        self.context.objects[self.content_class].append(obj)
+
+    def link_translations(self) -> None:
+        """Link translations."""
+        objs = self.all_content
+        # Link translations together
+        for obj in objs:
+            obj.link_translations(objs)
+
+        # Sanity check: warn of items with the same slug and lang
+        dupe_getter = attrgetter("slug", "lang")
+        for (slug, lang), items in groupby(sorted(objs, key=dupe_getter), dupe_getter):
+            if (items_count := len(list(items))) > 1:
+                warning_with_paths(
+                    f"There are {items_count} items with slug "
+                    f"'{slug}' and lang '{lang}'.",
+                    paths=[o.source_path for o in items],
+                )
+
     def generate_context(self) -> None:
         """Create the context of a generator.
 
-        The default implementation calls `_create_objects`, `_link_translations` and
-        `_update_context`, in this order.
+        The default implementation calls `_create_objects` and `_update_context`.
         """
         # First, we create the objects
         self.all_content.extend(self._create_objects())
-        # Next, we link the translations together
-        self.original_content.extend(self._link_translations(self.all_content))
-        # Finally, we update the context
+        # Then, we update the context
         self._update_context(self.all_content)
 
     def generate_output(self) -> None:
@@ -214,13 +216,6 @@ class Generator[T: SeagullObject](ABC):
         """A property that yields the ignored paths.
 
         :return: An iterable of paths relative to `self.base_path`.
-        """
-
-    @abstractmethod
-    def add_object_to_context(self, obj: T) -> None:
-        """Add an object to the shared context.
-
-        :param obj: Content to store.
         """
 
     @property

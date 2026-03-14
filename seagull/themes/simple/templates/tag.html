@@ -1,7 +1,8 @@
 {% extends "index.html" %}
 
-{% block title %}{{ sitename|striptags }} - {{ tag.name }} tag{% endblock %}
+{% block title %}{{ sitename|striptags }} -
+    {% trans trimmed tag_name=tag.name %}{{ tag_name }} tag{% endtrans %}{% endblock %}
 
 {% block content_title %}
-    <h2>Articles tagged with {{ tag.name }}</h2>
+    <h2>{% trans trimmed tag_name %}Articles tagged with {{ tag_name }}{% endtrans %}</h2>
 {% endblock %}

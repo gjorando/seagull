@@ -2,115 +2,42 @@ import gettext
 import locale
 import os
 import sys
-from abc import abstractmethod
-from contextlib import contextmanager
 from dataclasses import dataclass, field, fields
-from functools import partial
 from importlib import import_module
-from importlib.util import find_spec, module_from_spec, spec_from_file_location
+from importlib.util import module_from_spec, spec_from_file_location
 from inspect import getmembers
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from itertools import batched, permutations, product
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader, PrefixLoader
 
 from seagull.decorators import extra_dataclass
 from seagull.log import logger
+from seagull.utils import (
+    absolute_from_base_path,
+    ensure_paths,
+    get_installed_themes_path,
+    order_by_factory,
+    strftime_jinja_filter,
+    temporary_locale,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Generator
-    from datetime import datetime
+    from collections.abc import Callable
     from types import ModuleType
+    from typing import Any, Self
 
     from jinja2 import BaseLoader
 
-    from seagull.contents import Article, Author, Category, Page, SeagullObject, Tag
-
-
-class Comparable[T](Protocol):
-    """Protocol for annotating comparable types."""
-
-    @abstractmethod
-    def __lt__(self: T, other: T, /) -> bool: ...
-
-
-def order_by_factory[T: Comparable](
-    value: str,
-) -> tuple[Callable[[SeagullObject], T], bool]:
-    """Convert an `*_ORDER_BY` setting to a key function and `reverse` parameter.
-
-    See [the Python documentation](https://docs.python.org/3/howto/sorting.html)
-    for details about key functions.
-
-    :return: A function that takes a seagull object and return a value for sorting; a
-    boolean that tells whether to reverse the sorting order.
-    """
-    reverse = False
-    # Special case basename: order by filename
-    if value == "basename":
-
-        def key_func(obj: SeagullObject) -> T:
-            if obj.source_path:
-                return obj.source_path.name
-            return obj.title
-    # Otherwise, sort by a given metadata key
-    else:
-        if value.startswith("reversed-"):
-            value = value.replace("reversed-", "", 1)
-            reverse = True
-
-        def key_func(obj: SeagullObject) -> object:
-            return getattr(obj, value)
-
-    return key_func, reverse
-
-
-@contextmanager
-def temporary_locale(
-    temp_locale: str, lc_category: int | tuple[int, ...] = locale.LC_ALL
-) -> Generator[None]:
-    """Context manager for running code with a temporary locale.
-
-    Resets the locale back when exiting context.
-
-    :param temp_locale: Temporary locale to use.
-    :param lc_category: Locale category or list of locale categories that are affected.
-    """
-    if not isinstance(lc_category, tuple):
-        lc_category = [lc_category]
-    orig_locales = {lcc: locale.setlocale(lcc) for lcc in lc_category}
-
-    # Change the desired locale categories, then enter the context manager
-    for lcc in lc_category:
-        locale.setlocale(lcc, temp_locale)
-    yield
-    # After exiting the context manager, restore the categories to their old locale
-    for lcc in lc_category:
-        locale.setlocale(lcc, orig_locales[lcc])
-
-
-def strftime_jinja_filter(date: datetime, date_format: str, locale_: str = "") -> str:
-    """A locale aware date-formatter for Jinja.
-
-    :param date: `datetime` object to format.
-    :param date_format: Format string.
-    :param locale_: Locale to use. If empty, it uses the currently defined locale for
-    `LC_TIME`.
-    :return: Formatted `datetime` using `strftime`.
-    """
-    if not locale_:
-        locale_ = locale.setlocale(locale.LC_TIME)
-    # on OSX, encoding from LC_CTYPE determines the Unicode output
-    # So make sure it's same as LC_TIME
-    with temporary_locale(locale_, (locale.LC_TIME, locale.LC_CTYPE)):
-        return date.strftime(date_format)
+    from seagull.contents import Article, Author, Category, Page, Tag
+    from seagull.utils import Comparable
 
 
 @extra_dataclass
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, repr=False)
 class Settings:
     # Basic settings
     use_folder_as_category: bool = True
@@ -119,7 +46,7 @@ class Settings:
     html_parser: str = "html.parser"
     delete_output_directory: bool = False
     output_retention: list[Path] = field(default_factory=list)
-    jinja_environment: dict[str, Any] | Environment = field(
+    jinja_environment: dict[str, Any] = field(
         default_factory=lambda: {
             "extensions": ["jinja2.ext.i18n"],
             "trim_blocks": True,
@@ -145,6 +72,9 @@ class Settings:
     siteurl: str = "/"
     static_paths: list[Path] = field(default_factory=lambda: [Path("images/")])
     static_excludes: list[Path] = field(default_factory=list)
+    summary_max_length: int | None = 50
+    summary_max_paragraphs: int | None = None
+    summary_end_suffix: str = "…"
     intrasite_link_regex: str = r"{(?P<what>.*?)}"
     cache_path: Path = Path("cache")
     formatted_fields: list = field(default_factory=lambda: ["summary"])
@@ -174,12 +104,40 @@ class Settings:
     draft_page_lang_save_as: Path | None = Path("drafts/pages/{slug}-{lang}.html")
     author_url: str = "author/{slug}.html"
     author_save_as: Path | None = Path("author/{slug}.html")
+    author_lang_url: str = "author/{slug}-{lang}.html"
+    author_lang_save_as: Path | None = Path("author/{slug}-{lang}.html")
     category_url: str = "category/{slug}.html"
     category_save_as: Path | None = Path("category/{slug}.html")
+    category_lang_url: str = "category/{slug}-{lang}.html"
+    category_lang_save_as: Path | None = Path("category/{slug}-{lang}.html")
     tag_url: str = "tag/{slug}.html"
     tag_save_as: Path | None = Path("tag/{slug}.html")
+    tag_lang_url: str = "tag/{slug}-{lang}.html"
+    tag_lang_save_as: Path | None = Path("tag/{slug}-{lang}.html")
+    archives_url: str = "archives.html"
+    archives_save_as: Path | None = Path("archives.html")
+    archives_lang_url: str = "archives-{lang}.html"
+    archives_lang_save_as: Path | None = Path("archives-{lang}.html")
+    authors_url: str = "authors.html"
+    authors_save_as: Path | None = Path("authors.html")
+    authors_lang_url: str = "authors-{lang}.html"
+    authors_lang_save_as: Path | None = Path("authors-{lang}.html")
+    categories_url: str = "categories.html"
+    categories_save_as: Path | None = Path("categories.html")
+    categories_lang_url: str = "categories-{lang}.html"
+    categories_lang_save_as: Path | None = Path("categories-{lang}.html")
+    tags_url: str = "tags.html"
+    tags_save_as: Path | None = Path("tags.html")
+    tags_lang_url: str = "tags-{lang}.html"
+    tags_lang_save_as: Path | None = Path("tags-{lang}.html")
     index_url: str = "index.html"
     index_save_as: Path | None = Path("index.html")
+    index_lang_url: str = "index-{lang}.html"
+    index_lang_save_as: Path | None = Path("index-{lang}.html")
+    direct_template_url: str = "{slug}.html"
+    direct_template_save_as: Path | None = Path("{slug}.html")
+    direct_template_lang_url: str = "{slug}-{lang}.html"
+    direct_template_lang_save_as: Path | None = Path("{slug}-{lang}.html")
     slugify_source: str = "title"
     slugify_settings: dict[str, Any] = field(default_factory=dict)
     author_slugify_settings: dict[str, Any] | None = None
@@ -189,8 +147,7 @@ class Settings:
     # Time and date
     timezone: str | ZoneInfo = field(default_factory=lambda: ZoneInfo("UTC"))
     default_date: str | None = None
-    default_date_format: str = "%a %d %B %Y"
-    date_formats: dict[str, str | tuple[str, str]] = field(default_factory=dict)
+    date_format: str = "%a %d %B %Y"
     locale: str | list[str] = field(
         default_factory=lambda: [locale.setlocale(locale.LC_ALL)]
     )
@@ -203,8 +160,7 @@ class Settings:
             "tags",
             "categories",
             "authors",
-            # TODO archives
-            # "archives",
+            "archives",
         ]
     )
 
@@ -217,15 +173,18 @@ class Settings:
 
     # Translations
     default_lang: str = "en"
-    article_translation_id: str | Collection[str] | None = "slug"
-    page_translation_id: str | Collection[str] | None = "slug"
+    langs: dict[str, dict] = field(default_factory=dict)
+    use_subsites: bool = False
 
     # Ordering content
-    article_order_by: str | Callable[[Article], tuple[Any, bool]] = "reversed-date"
-    page_order_by: str | Callable[[Page], tuple[Any, bool]] = "basename"
-    author_order_by: str | Callable[[Author], tuple[Any, bool]] = "name"
-    category_order_by: str | Callable[[Category], tuple[Any, bool]] = "name"
-    tag_order_by: str | Callable[[Tag], tuple[Any, bool]] = "name"
+    # TODO allow for sorting by more than one function (eg. sort by date, then by name)
+    article_order_by: str | Callable[[Article], tuple[Comparable, bool]] = (
+        "reversed-date"
+    )
+    page_order_by: str | Callable[[Page], tuple[Comparable, bool]] = "basename"
+    author_order_by: str | Callable[[Author], tuple[Comparable, bool]] = "name"
+    category_order_by: str | Callable[[Category], tuple[Comparable, bool]] = "name"
+    tag_order_by: str | Callable[[Tag], tuple[Comparable, bool]] = "name"
 
     # Themes
     theme: Path | str = "simple"
@@ -239,109 +198,101 @@ class Settings:
     display_pages_on_menu: bool = True
     display_categories_on_menu: bool = True
 
-    # FIXME PLR0912, PLR0915
-    def __post_init__(self) -> None:  # noqa: PLR0912, PLR0915
+    # Technical fields
+    _settings_path: Path | None = field(default=None, repr=False)
+    _overrides: dict[str, Any] = field(default_factory=dict, repr=False)
+    _localized_settings: dict[str, Self] = field(default_factory=dict, repr=False)
+    _jinja_env_object: Environment | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
         """Parse and normalize various settings."""
-
-        # Ensure a path-like or list of path-like uses pathlib.Path
-        def ensure_paths(p: Path | str | list[Path | str]) -> Path | list[Path]:
-            if isinstance(p, list):
-                return [Path(v) for v in p]
-            return Path(p)
-
-        def absolute_from_base(
-            p: Path | str | list[Path | str], base: Path
-        ) -> Path | list[Path]:
-            def _absolute_from_base(o: Path) -> Path:
-                return o if o.is_absolute() else (base / o).resolve()
-
-            p = ensure_paths(p)
-            if isinstance(p, Path):
-                return _absolute_from_base(p)
-            return [_absolute_from_base(o) for o in p]
-
-        def mutually_exclusive_sources(
-            includes: list[Path], excludes: list[Path]
-        ) -> None:
-            for p in includes:
-                if p not in excludes:
-                    excludes.append(p)
-
         # Coalesce these relative paths to absolute paths relative to _working_dir,
         # which is usually the directory where the settings module is
         # All these paths are "base paths", which means they're used as a base for all
         # the other relative path settings (see below)
         # self.theme is also a base path, but it requires special treatment
-        absolute_from_working_dir = partial(absolute_from_base, base=Path.cwd())
-        for key in ["path", "output_path", "cache_path", "plugin_paths"]:
+        for key in ("path", "output_path", "cache_path", "plugin_paths"):
             value = getattr(self, key)
-            setattr(self, key, absolute_from_working_dir(value))
+            setattr(self, key, absolute_from_base_path(value, Path.cwd()))
+        # Ensure relative paths
+        self._ensure_relative_paths(
+            "output_retention", "theme_static_dir", "theme_template_overrides"
+        )
 
-        # Strip and lowercase these values
-        for key in ["default_lang", "theme_lang"]:
-            setattr(self, key, getattr(self, key).strip().lower())
-        self.date_formats = {k.lower(): v for k, v in self.date_formats.items()}
-
-        # Setup locale
-        if isinstance(self.locale, str):
-            self.locale = [self.locale]
-        for candidate_locale in self.locale:
-            try:
-                # Try setting the candidate locale
-                locale.setlocale(locale.LC_ALL, candidate_locale)
-                # If no error, we set self.locale to the candidate and exit the loop
-                self.locale = candidate_locale
-                break
-            except locale.Error:
-                pass
-        else:
-            logger.warning(
-                "Locale could not be set. Check the LOCALE setting, "
-                "ensuring it is valid and available on your system."
-            )
-            # We fall back to the currently defined locale
-            self.locale = locale.setlocale(locale.LC_ALL)
-
-        # Timezone
-        if not isinstance(self.timezone, ZoneInfo):
-            self.timezone = ZoneInfo(self.timezone)
-
-        # Ensure paths for these values
-        # All these paths are relative to a base path (see above)
-        for key in [
-            "article_paths",
-            "article_excludes",
-            "page_paths",
-            "page_excludes",
-            "static_paths",
-            "static_excludes",
-            "output_retention",
-            "theme_static_dir",
-            "theme_template_overrides",
-            "category_paths",
-            "category_excludes",
-            "author_paths",
-            "author_excludes",
-            "tag_paths",
-            "tag_excludes",
-            "theme_static_paths",
-        ]:
+        # Convert *_order_by settings into a key function if necessary
+        for key in [f.name for f in fields(self) if f.name.endswith("_order_by")]:
             value = getattr(self, key)
-            # FIXME ensure all of these are relative paths, and that they do not walk up
-            setattr(self, key, ensure_paths(value))
-
-        # Ensure paths or none for the _save_as settings:
-        # FIXME idem
-        for key in [f.name for f in fields(self) if f.name.endswith("_save_as")]:
-            path = getattr(self, key)
-            # None disables the rendering of the associated object
-            path = Path(path) if path else None
-            setattr(self, key, path)
+            if isinstance(value, str):
+                setattr(self, key, order_by_factory(value))
+        # If seagull_class is a string, import the class it is referring to
+        if isinstance(self.seagull_class, str):
+            module_name, cls_name = self.seagull_class.rsplit(".", 1)
+            module = import_module(module_name)
+            self.seagull_class = getattr(module, cls_name)
+        # Add the trailing slash if missing (important for link joining)
+        if not self.siteurl.endswith("/"):
+            self.siteurl = f"{self.siteurl}/"
+        # Parse the IP address in bind
+        if not isinstance(self.bind, (IPv4Address, IPv6Address)):
+            self.bind = ip_address(self.bind)
 
         # Article, taxonomy and page paths are mutually exclusive
-        # So add all paths for an object type to the excludes of all the other types
-        mutex_types = ("article", "page", "author", "category", "tag")
-        for (i, _), (_, e) in permutations(
+        self._mutually_exclude_sources("article", "page", "author", "category", "tag")
+        # Set up lang-related settings
+        self._init_i18n()
+        # Find the installed themes path
+        installed_themes_path = get_installed_themes_path()
+        # Resolve the theme path
+        self._init_theme(installed_themes_path)
+        # Setup the jinja environment
+        self._init_jinja_environment(installed_themes_path)
+        # Finally, register all localized settings; this must always be done last
+        for lang in (self.default_lang, *self.langs):
+            self.localized_settings(lang)
+
+    def _ensure_relative_paths(self, *other_keys: str) -> None:
+        """Ensure relative path settings are `Path` objects.
+
+        `_save_as`, `_paths`, and `_excludes` settings, as well all `other_keys`
+        settings, are processed. A relative path here is relative to one of the base
+        path settings.
+
+        :param other_keys: Other setting keys to process.
+        """
+        # TODO ensure all of these are relative paths, and that they do not walk up
+        save_as_keys = []
+        include_keys = []
+        exclude_keys = []
+        for setting_key in self.as_dict():
+            if setting_key.endswith("_save_as"):
+                save_as_keys.append(setting_key)
+            elif setting_key.endswith("_paths"):
+                include_keys.append(setting_key)
+            elif setting_key.endswith("_excludes"):
+                exclude_keys.append(setting_key)
+        # _save_as settings can be None (disables
+        # the rendering of the associated object)
+        for key in save_as_keys:
+            path = getattr(self, key)
+            path = Path(path) if path else None
+            setattr(self, key, path)
+        for key in (
+            *other_keys,
+            *include_keys,
+            *exclude_keys,
+        ):
+            value = getattr(self, key)
+            setattr(self, key, ensure_paths(value))
+
+    def _mutually_exclude_sources(self, *mutex_types: str) -> None:
+        """Add all paths for an object type to the excludes of all other types.
+
+        Paths for an object type are stored in `self.<type>_paths`, excludes are in
+        `self.<type>_excludes`.
+
+        :param mutex_types: Sequence of mutually exclusive object types.
+        """
+        for (includes, _), (_, excludes) in permutations(
             batched(
                 (
                     getattr(self, f"{a}_{b}")
@@ -352,39 +303,54 @@ class Settings:
             ),
             2,
         ):
-            mutually_exclusive_sources(i, e)
+            for p in includes:
+                if p not in excludes:
+                    excludes.append(p)
 
-        # Parse the IP address in bind
-        if not isinstance(self.bind, (IPv4Address, IPv6Address)):
-            self.bind = ip_address(self.bind)
+    def _init_i18n(self) -> None:
+        """Set up internationalization related settings."""
+        # Strip and lowercase language codes
+        for key in ["default_lang", "theme_lang"]:
+            setattr(self, key, getattr(self, key).strip().lower())
+        self.langs = {k.strip().lower(): v for k, v in self.langs.items()}
 
-        # Convert *_order_by settings into a key function if necessary
-        for key in [f.name for f in fields(self) if f.name.endswith("_order_by")]:
-            value = getattr(self, key)
-            if isinstance(value, str):
-                setattr(self, key, order_by_factory(value))
-
-        # Add the trailing slash if missing (important for link joining)
-        if not self.siteurl.endswith("/"):
-            self.siteurl = f"{self.siteurl}/"
-
-        # Find the installed themes path
-        installed_themes_path = None
-        if seagull_spec := find_spec(__package__):
-            # the installed themes are stored in <seagull package>/themes/
-            package_dir = Path(seagull_spec.origin).parent
-            installed_themes_path = package_dir / "themes"
-        if not (installed_themes_path and installed_themes_path.exists()):
-            installed_themes_path = None
+        # Configure the locale
+        if isinstance(self.locale, str):
+            self.locale = [self.locale]
+        for candidate_locale in self.locale:
+            try:
+                # Try the candidate locale
+                with temporary_locale(candidate_locale, locale.LC_ALL):
+                    pass
+                # If no error, we set self.locale to the candidate and exit the loop
+                self.locale = candidate_locale
+                break
+            except locale.Error:
+                pass
+        else:
+            log_locales = ", ".join(f"'{loc}'" for loc in self.locale)
             logger.warning(
-                "Couldn't find the installed themes path: 'simple' and "
-                "the other installed themes won't be available."
+                f"No valid locale: {log_locales}. Check the LOCALE setting, "
+                "ensuring it is valid and available on your system."
             )
+            # We fall back to the currently defined locale
+            self.locale = locale.setlocale(locale.LC_ALL)
 
-        # Set up the theme: if it's not a directory in the working directory, try
-        # finding it in the installed themes
+        # Ensure timezone is a ZoneInfo object
+        if not isinstance(self.timezone, ZoneInfo):
+            self.timezone = ZoneInfo(self.timezone)
+
+    def _init_theme(self, installed_themes_path: Path | None) -> None:
+        """Set up the theme path.
+
+        If the theme setting value doesn't refer to a subdir of the working directory,
+        try finding it in the installed themes.
+
+        :param installed_themes_path: The path for installed themes, if it exists.
+        :raise RuntimeError: If the theme couldn't be found.
+        """
         if (
-            not (theme_path := absolute_from_working_dir(self.theme).is_dir())
+            not (theme_path := absolute_from_base_path(self.theme, Path.cwd())).is_dir()
             and installed_themes_path
         ):
             theme_path = installed_themes_path / self.theme
@@ -395,43 +361,56 @@ class Settings:
                 f"Couldn't load the theme '{self.theme}' from installed themes."
             )
 
-        # If JINJA_ENVIRONMENT is not already a jinja2.Environment object, create it
-        if not isinstance(self.jinja_environment, Environment):
-            # Ensure the defaults for JINJA_ENVIRONMENT are set, even if the user has
-            # set a custom JINJA_ENVIRONMENT
-            jinja_defaults = next(
-                filter(lambda f: f.name == "jinja_environment", fields(self.__class__))
-            ).default_factory()
-            for k, v in jinja_defaults.items():
-                if k not in self.jinja_environment:
-                    self.jinja_environment[k] = v
-            # Default loader: template are searched for in the overrides first, then in
-            # the theme
-            template_paths = [*self.theme_template_overrides, self.theme / "templates"]
-            loaders: list[BaseLoader] = [FileSystemLoader(template_paths)]
-            prefix_loaders = {}
-            # If we have found an installed themes path, the next loader we try is the
-            # implicit loader for the simple theme
-            if installed_themes_path:
-                simple_loader = FileSystemLoader(
-                    installed_themes_path / "simple" / "templates"
-                )
-                loaders.append(simple_loader)
-                prefix_loaders["!simple"] = simple_loader
-            # And the last loader we try is a prefix loader with !simple (if possible)
-            # and !theme, which looks at self.theme's templates
-            prefix_loaders["!theme"] = FileSystemLoader(self.theme / "templates")
-            loaders.append(PrefixLoader(prefix_loaders))
+    def _init_jinja_environment(self, installed_themes_path: Path | None) -> None:
+        """Set up the jinja environment object.
 
-            # Finally, we can create our Jinja environment object
-            self.jinja_environment: Environment = Environment(
-                loader=ChoiceLoader(loaders), **self.jinja_environment
+        :param installed_themes_path: The path for installed themes, if it exists.
+        """
+        # Ensure the defaults for JINJA_ENVIRONMENT are set, even if the user has
+        # set a custom JINJA_ENVIRONMENT
+        jinja_defaults = next(
+            filter(lambda f: f.name == "jinja_environment", fields(self.__class__))
+        ).default_factory()
+        for k, v in jinja_defaults.items():
+            self.jinja_environment.setdefault(k, v)
+        # Default loader: template are searched for in the template overrides first,
+        # then in the theme
+        template_paths = [*self.theme_template_overrides, self.theme / "templates"]
+        loaders: list[BaseLoader] = [FileSystemLoader(template_paths)]
+        prefix_loaders = {}
+        # If we have found an installed themes path, the next loader we try is the
+        # implicit loader for the simple theme
+        if installed_themes_path:
+            simple_loader = FileSystemLoader(
+                installed_themes_path / "simple" / "templates"
             )
+            loaders.append(simple_loader)
+            # The simple theme can also be accessed with the !simple prefix
+            prefix_loaders["!simple"] = simple_loader
+        # And the last loader we try is a prefix loader with !simple (if possible)
+        # and !theme, which looks at self.theme's templates
+        prefix_loaders["!theme"] = FileSystemLoader(self.theme / "templates")
+        loaders.append(PrefixLoader(prefix_loaders))
+
+        # Finally, we can create our Jinja environment object
+        environment = Environment(
+            loader=ChoiceLoader(loaders), **self.jinja_environment
+        )
+
+        # Jinja filter for time formatting
+        environment.filters["strftime"] = strftime_jinja_filter
+        # User defined filters for Jinja2
+        environment.filters.update(self.jinja_filters)
+
+        # Store our environment object in the settings
+        self._jinja_env_object = environment
 
         # If the i18n extension is set, we configure it
         if install_gettext_translations := getattr(
-            self.jinja_environment, "install_gettext_translations", None
+            environment, "install_gettext_translations", None
         ):
+            # We will fall back to a null translation for the theme lang or a lang
+            # that's not available for the theme
             translations = gettext.NullTranslations()
             # If the site language is different from the theme's default one...
             if self.theme_lang != self.default_lang:
@@ -440,8 +419,10 @@ class Settings:
                     translations = gettext.translation(
                         domain="messages",
                         localedir=self.theme / "translations",
-                        # FIXME all languages!
                         languages=[self.default_lang],
+                    )
+                    logger.debug(
+                        f"Installed '{self.default_lang}' translations for the theme."
                     )
                 except OSError:
                     logger.warning(
@@ -451,16 +432,53 @@ class Settings:
         else:
             logger.warning("Running without jinja2 internationalization.")
 
-        # Jinja filter for time formatting
-        self.jinja_environment.filters["strftime"] = strftime_jinja_filter
-        # User defined filters for Jinja2
-        self.jinja_environment.filters.update(self.jinja_filters)
+    def localized_settings(self, lang: str) -> Self:
+        """Get the localized settings for a given lang.
 
-        # If SEAGULL_CLASS is a string, import the class it is referring to
-        if isinstance(self.seagull_class, str):
-            module_name, cls_name = self.seagull_class.rsplit(".", 1)
-            module = import_module(module_name)
-            self.seagull_class = getattr(module, cls_name)
+        It creates a shallow copy of the current object, with `self.langs[lang]` as a
+        dictionary of overrides. The copy is cached; if `lang == self.default_lang`,
+        we cache `self` as well.
+
+        :param lang: Target language.
+        :return: A new `Settings` object.
+        :raise ValueError: If there is no `lang` override in `self.langs`.
+        """
+        lang = lang.lower()
+        # If the localized settings were already created, simply return them
+        if lang in self._localized_settings:
+            return self._localized_settings[lang]
+        # Otherwise, if we're retrieving the default lang, simply return self
+        if lang == self.default_lang:
+            # We also keep track of the default lang
+            self._localized_settings[lang] = self
+            return self
+        # Otherwise, let's try registering a new Settings object specific to this lang
+        context = self.as_dict()
+        # We get the overrides from self.langs[lang], and we raise a ValueError if
+        # there is no override for this lang; we pop the langs from the context of the
+        # localized settings as well
+        if (lang_overrides := context.pop("langs", {}).get(lang)) is None:
+            raise ValueError(lang)
+        # Convert setting keys to lowercase
+        lang_overrides = {k.lower(): v for k, v in lang_overrides.items()}
+        context.update(lang_overrides)
+        # Update the default_lang for these localized settings
+        context["default_lang"] = lang
+        # Do not re-do the subsites setup in localized settings
+        context["use_subsites"] = False
+        # Keep track of the lang overrides and the other localized settings
+        context["_overrides"] = lang_overrides
+        context["_localized_settings"] = self._localized_settings
+        self._localized_settings[lang] = self.__class__(**context)
+        return self._localized_settings[lang]
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a dictionary of all fields and extra metadata attributes."""
+        return {
+            k: getattr(self, k)
+            for k in [f.name for f in fields(self)]
+            + list(getattr(self, "__extra_dataclass__attrs__", []))
+        }
 
     @classmethod
     def from_settings_file(cls, settings_file: Path, **overrides: dict) -> Settings:
@@ -509,7 +527,7 @@ class Settings:
             for k, v in getmembers(module):
                 process_setting(context, extra_context, k, v)
 
-        # Update overrides so that non-base settings are put in _extra
+        # Update overrides
         context_overrides = {}
         extra_overrides = {}
         for k, v in overrides.items():
@@ -520,8 +538,13 @@ class Settings:
         extra_context.update(extra_overrides)
         context.update(extra_context)
 
+        # As this settings instance was created from a file, we record its path
+        context["_settings_path"] = Path(module.__spec__.origin)
+        # Keep track of the overrides
+        context["_overrides"] = context_overrides | extra_overrides
         # Set the working directory to the settings module directory
-        os.chdir(Path(module.__spec__.origin).parent)
+        # FIXME if we call seagull from another path than the settings file directory, the cli overrides break; we then need to rewrite those overrides before passing them to from_module
+        os.chdir(context["_settings_path"].parent)
         return cls(**context)
 
     @classmethod
@@ -535,3 +558,32 @@ class Settings:
         :return: `True` if `value` is a valid parameter key.
         """
         return value.isupper() and not value.startswith("_")
+
+    @property
+    def settings_path(self) -> Path | None:
+        """Getter for the settings path.
+
+        :return: The path of the settings file from which the `Settings` instances comes
+        from, or `None` if it was created programmatically.
+        """
+        return self._settings_path
+
+    @property
+    def overrides(self) -> dict:
+        """Getter for the overrides.
+
+        :return: If `self.settings_path` is not None, this property keeps track of
+        settings overrides.
+        """
+        return self._overrides
+
+    @property
+    def jinja_env_object(self) -> Environment:
+        """Getter for the Jinja `Environment` object.
+
+        :return: The configured Jinja environment for template rendering.
+        :raise RuntimeError: If the Jinja environment is not initialized.
+        """
+        if not self._jinja_env_object:
+            raise RuntimeError("The Jinja environment has not been initialized.")
+        return self._jinja_env_object

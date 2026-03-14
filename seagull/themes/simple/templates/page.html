@@ -1,33 +1,33 @@
 {% extends "base.html" %}
 {% block html_lang %}{{ page.lang }}{% endblock %}
 
-{% block title %}{{ sitename|striptags }} - {{ page.title|striptags }}{%endblock%}
+{% block title %}{{ sitename|striptags }} - {{ page.title|striptags }}{% endblock %}
 
 {% block head %}
-  {{ super() }}
+    {{ super() }}
 
-  {% import 'translations.html' as translations with context %}
-  {% if translations.entry_hreflang(page) %}
-    {{ translations.entry_hreflang(page) }}
-  {% endif %}
+    {% import 'translations.html' as translations with context %}
+    {% if translations.entry_hreflang(page) %}
+        {{ translations.entry_hreflang(page) }}
+    {% endif %}
 {% endblock %}
 
 {% block content %}
-  <article>
-    <header>
-      <h2>{{ page.title }}</h2>
-    </header>
-    {% import 'translations.html' as translations with context %}
-    {{ translations.translations_for(page) }}
+    <article>
+        <header>
+            <h2>{{ page.title }}</h2>
+        </header>
+        {% import 'translations.html' as translations with context %}
+        {{ translations.translations_for(page) }}
 
-    {{ page.content }}
+        {{ page.content }}
 
-    {% if page.modified %}
-      <footer>
-        <p>
-          Last updated: {{ page.locale_modified }}
-        </p>
-      </footer>
-    {% endif %}
-  </article>
+        {% if page.modified %}
+            <footer>
+                <p>
+                    {{ _("Last updated:") }} {{ page.locale_modified }}
+                </p>
+            </footer>
+        {% endif %}
+    </article>
 {% endblock %}

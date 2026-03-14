@@ -1,8 +1,9 @@
 import logging
+from itertools import product
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from seagull.contents import SeagullObject
+from seagull.contents import DirectTemplate
 from seagull.exceptions import SeagullError
 from seagull.generators.generator import Generator
 from seagull.log import logger
@@ -11,10 +12,10 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 
-class DirectTemplateGenerator[T: SeagullObject](Generator):
+class DirectTemplateGenerator[T: DirectTemplate](Generator):
     """Generator for direct templates, such as 'index' or 'categories'."""
 
-    content_class: type[T] = SeagullObject
+    content_class: type[T] = DirectTemplate
 
     def add_object_to_context(self, obj: T) -> None:
         pass
@@ -27,30 +28,19 @@ class DirectTemplateGenerator[T: SeagullObject](Generator):
         for each template listed in `DIRECT_TEMPLATES`. As such, this generator doesn't
         use a `Reader` object.
         """
+        existing_save_as = [o.save_as for o in self.context]
         all_content = []
-        # FIXME maybe actually delegate the object creation to a DirectTemplateReader?
         # TODO translations
         # TODO pagination
-        # TODO maybe a dedicated seagull object for direct templates
-        for template_name in self.settings.direct_templates:
-            save_as = getattr(
-                self.settings,
-                f"{template_name.lower()}_save_as",
-                Path(f"{template_name}.html"),
-            )
-            url = (
-                getattr(self.settings, f"{template_name.lower()}_url", str(save_as))
-                or "."
-            )
+        for template_name, template_lang in product(
+            self.settings.direct_templates,
+            (self.settings.default_lang, *self.settings.langs.keys()),
+        ):
             try:
-                obj = SeagullObject(
+                obj = self.content_class(
                     settings=self.settings,
                     title=template_name,
-                    # FIXME slug
-                    slug=f"direct-template-{template_name}",
-                    lang=self.settings.default_lang,
-                    save_as=save_as,
-                    url=url,
+                    lang=template_lang,
                     template=template_name,
                 )
             except SeagullError:
@@ -58,6 +48,10 @@ class DirectTemplateGenerator[T: SeagullObject](Generator):
                     f"Couldn't process direct template '{template_name}'.",
                     exc_info=logger.level == logging.DEBUG,
                 )
+                continue
+            # Avoid overriding previously generated content
+            if obj.save_as in existing_save_as:
+                logger.debug(f"Skipped direct template '{template_name}'.")
                 continue
             all_content.append(obj)
         return all_content

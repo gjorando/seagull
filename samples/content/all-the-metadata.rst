@@ -8,9 +8,7 @@ Many metadata
 :category: My category
 :author: Alice
 :authors: Bob, Charles, Danton
-:summary: A brief **summary**.
 :lang: en
-:translation: false
 :description: A description for the meta html
 
 Wow. `A link to a category. <{category}My\ category>`__
@@ -20,5 +18,14 @@ Wow. `A link to a category. <{category}My\ category>`__
 `A link to a static directory. <{static}another/>`__
 `A link to the index. <{index}>`__
 
+Another paragraph.
+
 .. image:: {static}/images/sushi.jpg
     :alt: A cat.
+
+Yet another paragraph.
+
+A subtitle
+==========
+
+Damn that's a long one.

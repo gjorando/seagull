@@ -1,7 +1,6 @@
 import logging
 import shutil
 from functools import partial
-from itertools import chain
 from typing import TYPE_CHECKING
 
 from seagull.contents import Author, Category, Tag
@@ -12,9 +11,9 @@ from seagull.generators import (
     PagesGenerator,
     StaticGenerator,
     TaxonomyGenerator,
-    ThemeStaticGenerator,
 )
-from seagull.log import logger
+from seagull.log import error_with_paths, logger
+from seagull.utils import PluralFormatter
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -28,6 +27,9 @@ class Seagull:
     """The main seagull class."""
 
     def __init__(self, settings: Settings):
+        """
+        :param settings: Seagull settings.
+        """
         self.settings: Settings = settings
         self.generator_classes: list[type[Generator]] = [
             # Taxonomy generators must always come before content generators
@@ -40,7 +42,7 @@ class Seagull:
             DirectTemplateGenerator,
             # StaticGenerator must always come last
             StaticGenerator,
-            ThemeStaticGenerator,
+            partial(StaticGenerator, theme_static=True),
         ]
 
     def _clear_output_dir(self, *, dry_run: bool = False) -> None:
@@ -123,12 +125,55 @@ class Seagull:
         for g in generators:
             g.generate_context()
 
-        # Then, we update intrasite links
-        for obj in chain(
-            context.generated_content.values(), *context.taxonomies.values()
-        ):
+        # Then, we link the translations together
+        for g in generators:
+            g.link_translations()
+
+        # Then, we sort every list of seagull objects
+        for object_class, object_list in context.objects.items():
+            # Get the setting for the type of object
+            order_by_setting_key = f"{object_class.__name__.lower()}_order_by"
+            sort_key, reverse = getattr(
+                self.settings, order_by_setting_key, (None, False)
+            )
+            # If a setting for this type exists, do the sorting
+            if sort_key:
+                object_list.sort(key=sort_key, reverse=reverse)
+
+        # We update intrasite links for all objects
+        for obj in context:
             obj.update_intrasite_links(context)
 
         # Now, we can write the output to disk
         for g in generators:
             g.generate_output()
+
+        self._run_stats(context)
+
+    @staticmethod
+    def _run_stats(context: Context) -> None:
+        """Display some stats about a run."""
+        for object_class, objs in context.objects.items():
+            object_name = object_class.__name__.lower()
+            if object_name.endswith("y"):
+                name_fstring = f"{object_name[:-1]}{{objs:plural,y,ies}}"
+            elif object_name == "static":
+                name_fstring = "static file{objs:plural,s}"
+            else:
+                name_fstring = f"{object_name}{{objs:plural,s}}"
+            logger.info(
+                PluralFormatter().format(
+                    f"Processed {{objs}} {name_fstring}.", objs=len(objs)
+                )
+            )
+        # Log failed source paths
+        if context.failed_source_paths:
+            error_with_paths(
+                PluralFormatter().format(
+                    "There {paths:plural,is,are} {len_paths} "
+                    "failed file{paths:plural,s}.",
+                    paths=context.failed_source_paths,
+                    len_paths=len(context.failed_source_paths),
+                ),
+                paths=context.failed_source_paths,
+            )

@@ -20,11 +20,8 @@ class Writer(ABC):
     A `Writer` object turns seagull objects into files.
     """
 
-    # FIXME metaclass for all this duplicated code from Reader?
     enabled: bool = True
     file_extensions: ClassVar[list[str | None]] = []
-    _instances: ClassVar[dict[type[Writer], Writer]] = {}
-    _per_extension: ClassVar[dict[str | None, Writer]] = {}
 
     @classmethod
     def all_writers(cls) -> Iterable[type[Writer]]:
@@ -43,43 +40,32 @@ class Writer(ABC):
         self.settings = settings
 
     @classmethod
-    def from_extension(cls, settings: Settings, extension: str | None) -> Self:
-        """Return a writer instance that's suitable for a given file extension. It
-        automatically creates an instance if it doesn't exist already.
+    def from_extension(cls, extension: str | None) -> type[Self]:
+        """Return a writer class that's suitable for a given file extension.
 
-        :param settings: Settings to initialize the writer with.
         :param extension: File extension (with or without leading dot). `None` is used
         as a special value for static files.
-        :return: A `Writer` subclass instance.
+        :return: A `Writer` subclass.
         :raise KeyError: If there is no suitable writer class for the extension.
         """
         # Remove the leading dot if the extension is not None
         if isinstance(extension, str) and extension.startswith("."):
             extension = extension[1:]
-        # If we already encountered this extension, directly retrieve the writer
-        if extension in cls._per_extension:
-            return cls._per_extension[extension]
-
-        # Otherwise, look for a suitable writer
+        # Look for a suitable reader
         candidates = [r for r in cls.all_writers() if extension in r.file_extensions]
         # Raise an exception if no reader was found
         if not candidates:
             raise KeyError(extension)
+        # TODO maybe find the most specialized subclass instead
         writer_class = candidates[0]
         # Log a warning if more than one reader is suitable for this extension
         if len(candidates) > 1:
             file_type = "static files" if extension is None else f"'{extension}' files"
             logger.warning(
-                f"Found {len(candidates)} writers for {file_type},"
+                f"Found {len(candidates)} readers for {file_type},"
                 f"{writer_class.__name__} will be used."
             )
-        # Create the reader instance if it doesn't already exist
-        if writer_class not in cls._instances:
-            cls._instances[writer_class] = writer_class(settings)
-        # Associate the extension to the reader instance
-        cls._per_extension[extension] = cls._instances[writer_class]
-        # Return the reader instance
-        return cls._instances[writer_class]
+        return writer_class
 
     @abstractmethod
     def _parse_data(self, obj: SeagullObject, context: Context) -> str | Path:
@@ -104,8 +90,6 @@ class Writer(ABC):
         log_output_path = output_path.relative_to(self.settings.output_path.parent)
         logger.debug(f"Writing '{log_output_path}'.")
 
-        # FIXME handle overrides
-
         # Write the file
         try:
             # mkdir -p the output directory if required
@@ -114,6 +98,8 @@ class Writer(ABC):
             # If the output path is a directory, delete it first
             elif output_path.is_dir():
                 output_path.unlink()
+            elif output_path.is_file():
+                logger.warning(f"Overriding {log_output_path}.")
             # Parse the data and save it
             match self._parse_data(obj, context):
                 # If _parse_data returns a path, we copy this file to the output

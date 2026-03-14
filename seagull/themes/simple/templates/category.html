@@ -1,7 +1,8 @@
 {% extends "index.html" %}
 
-{% block title %}{{ sitename|striptags }} - {{ category.name }} category{% endblock %}
+{% block title %}{{ sitename|striptags }} -
+    {% trans trimmed category_name=category.name %}{{ category_name }} category{% endtrans %}{% endblock %}
 
 {% block content_title %}
-    <h2>Articles in the {{ category.name }} category</h2>
+    <h2>{% trans trimmed category_name=category.name %}Articles in the {{ category_name }} category{% endtrans %}</h2>
 {% endblock %}

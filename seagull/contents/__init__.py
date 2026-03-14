@@ -1,18 +1,17 @@
 from seagull.contents.article import Article
-from seagull.contents.author import Author
-from seagull.contents.category import Category
 from seagull.contents.content import Content
+from seagull.contents.direct_template import DirectTemplate
 from seagull.contents.page import Page
 from seagull.contents.seagull_object import SeagullObject
 from seagull.contents.static import Static
-from seagull.contents.tag import Tag
-from seagull.contents.taxonomy import Taxonomy
+from seagull.contents.taxonomies import Author, Category, Tag, Taxonomy
 
 __all__ = [
     "Article",
     "Author",
     "Category",
     "Content",
+    "DirectTemplate",
     "Page",
     "SeagullObject",
     "Static",

@@ -76,7 +76,12 @@ class MetadataProcessor(ABC):
 
 
 class SeagullObjectProcessor[T: SeagullObject](MetadataProcessor):
-    """Convert a raw metadata value into a seagull object (or list of objects)."""
+    """Convert a raw metadata value into a seagull object (or list of objects).
+
+    It first tries to retrieve a taxonomy from the context, assuming the raw value is a
+    slug. If it doesn't find one, a new taxonomy object is created, using the raw value
+    as the name.
+    """
 
     def __init__(
         self,
@@ -133,9 +138,10 @@ class SeagullObjectProcessor[T: SeagullObject](MetadataProcessor):
             # If we are processing a taxon, try retrieving it from the context
             if issubclass(self.object_class, Taxonomy):
                 obj = context.get_or_new_taxon(
-                    self.object_class, value, settings=settings
+                    self.object_class, value, settings=settings, title=value
                 )
             else:
+                # TODO Currently we don't have processors for seagull objects that aren't taxons; what would it mean to add one?
                 obj = self.object_class(settings, title=value)
             objects.append(obj)
         # If we were parsing a single object, return it instead of the list

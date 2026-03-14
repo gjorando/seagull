@@ -1,22 +1,33 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from seagull.contents.seagull_object import SeagullObject
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from seagull.context import Context
 
-@dataclass(repr=False)
+
+@dataclass
 class Static(SeagullObject):
     """Seagull static content."""
 
-    template: str | None = None
+    MANDATORY_FIELDS: ClassVar[tuple[str, ...]] = (
+        *SeagullObject.MANDATORY_FIELDS,
+        "source_path",
+    )
 
-    # TODO allow for customization through *_SAVE_AS and *_URL settings?
-    def _save_as(self) -> Path | None:
-        """Static files retain the directory structure relative to the base path."""
+    def update_intrasite_links(self, context: Context) -> None:
+        # This is a no-op for static files: static files don't have rendered content
+        # that needs to be updated
+        pass
+
+    @property
+    def _save_as(self) -> Path:
+        # Static files retain the directory structure relative to the base path.
         return self.relative_source_path
 
+    @property
     def _url(self) -> str:
-        return str(self._save_as())
+        return str(self._save_as)

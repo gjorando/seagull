@@ -9,11 +9,24 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from pathlib import Path
 
+    from seagull.context import Context
+    from seagull.settings import Settings
+
 
 class StaticGenerator[T: Static](Generator):
     """Generate static content."""
 
     content_class = Static
+
+    def __init__(
+        self, settings: Settings, context: Context, *, theme_static: bool = False
+    ):
+        """
+        :param theme_static: If `True` the generator will work on the theme's static
+        files instead.
+        """
+        self.theme_static = theme_static
+        super().__init__(settings, context)
 
     @property
     def files(self) -> set[Path]:
@@ -27,31 +40,32 @@ class StaticGenerator[T: Static](Generator):
 
     def _get_reader(self, _: Path) -> Reader:
         # extension=None indicates we want the reader for static files
-        return Reader.from_extension(self.settings, extension=None)
+        return Reader.from_extension(None)(self.settings)
 
     def _get_writer(self, _: T) -> Writer:
         # Once again, extension=None -> reader for static files
-        return Writer.from_extension(self.settings, extension=None)
+        return Writer.from_extension(None)(self.settings)
 
     def has_valid_extension(self, _: Path) -> bool:
         # A static file can have any extension
         return True
 
-    def add_object_to_context(self, obj: T) -> None:
-        # Static files are recorded separately
-        self.context.static_content[obj.source_path] = obj
-
     @property
     def base_path(self) -> Path:
-        return self.settings.path
+        return self.settings.theme if self.theme_static else self.settings.path
 
     @property
     def valid_paths(self) -> Iterable[Path]:
-        return self.settings.static_paths
+        return (
+            self.settings.theme_static_paths
+            if self.theme_static
+            else self.settings.static_paths
+        )
 
     @property
     def excluded_paths(self) -> Iterable[Path]:
-        return self.settings.static_excludes
+        # No excluded paths for the theme static files
+        return [] if self.theme_static else self.settings.static_excludes
 
     @property
     def _extra_files(self) -> set[Path]:
@@ -60,4 +74,5 @@ class StaticGenerator[T: Static](Generator):
         :return: A set of absolute paths to process in addition to `self.files`.
         """
         # The `StaticGenerator` also processes discovered static links
-        return self.context.static_links
+        # ... Not for the theme `StaticGenerator` instance though
+        return set() if self.theme_static else self.context.static_links

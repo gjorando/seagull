@@ -1,165 +1,179 @@
-from dataclasses import dataclass, field
+import re
+from dataclasses import dataclass, field, fields
+from datetime import datetime
+from enum import StrEnum, auto
 from typing import TYPE_CHECKING, ClassVar
 
-from slugify import slugify
+from bs4 import BeautifulSoup
 
-from seagull.contents.seagull_object import SeagullObject, reserved_property
+from seagull.contents.seagull_object import SeagullObject
+from seagull.exceptions import InvalidObjectError, SkippedFileError
 
 if TYPE_CHECKING:
-    from datetime import datetime
+    from pathlib import Path
+    from typing import Self
 
-    from seagull.contents.author import Author
-    from seagull.contents.tag import Tag
-
-
-class AuthorDescriptor[T: Content]:
-    """A descriptor for the 'author' metadata key.
-
-    This descriptor provides a shorthand for getting and setting the first author in the
-    authors list of a `Content` object. This allows us to set either authors or author
-    when initializing content.
-
-    If both the `AuthorDescriptor` attribute and its associated authors list are set in
-    the object creation, this attribute overrides the first author in the list.
-    """
-
-    def __set_name__(self, owner: type[T], name: str) -> None:
-        """Store the attribute name and that of its associated authors list.
-
-        :param owner: Owner class of the attribute.
-        :param name: Name of the attribute.
-        """
-        # The associated author list is the name of the descriptor field, with an added
-        # 's' at the end (author -> authors)
-        self._author_list = f"{name}s"
-        self._name = name
-
-    def __get__(
-        self, instance: Content | type[T], owner: type[T] | None = None
-    ) -> Author | None:
-        """Author attribute getter.
-
-        Python dataclasses try accessing the attribute through the owner class to
-        retrieve the default value of the descriptor. This method returns `None` as the
-        default value, which is then used by `AuthorDescriptor.__set__` upon
-        instantiation.
-
-        :param instance: Instance holding the attribute, or owner class if `owner` is
-        `None`.
-        :param owner: Owner class of the attribute, or `None` if the attribute is
-        accessed through the owner class.
-        :return: An `Author` object, or `None` if the attribute is accessed through the
-        class, or if there is no author in the authors list.
-        :raise AttributeError: If the authors list attribute can't be found in the
-        instance.
-        """
-        # Default value is set to None
-        if instance is None:
-            return None
-        authors = getattr(instance, self._author_list)
-        return authors[0] if authors else None
-
-    def __set__(self, instance: T, value: Author | None) -> None:
-        """Author attribute setter.
-
-        Upon initialization of a python dataclass, this attribute will be set with the
-        default value, which a dataclass retrieved by getting this descriptor attribute
-        through the owner class instead of an instance. `AuthorDescriptor.__get__`
-        returns `None` in this case. As such, a `None` value is a no-op, so that the
-        first author in the authors list is not overridden.
-
-        :param instance: Instance holding the attribute.
-        :param value: New value for the author, or `None` for the initialization special
-        case.
-        :raise AttributeError: If the authors list attribute can't be found in the
-        instance.
-        """
-        authors = getattr(instance, self._author_list)
-        # No-op if the value is None
-        if value is None:
-            return
-        # Update the first author...
-        if authors:
-            authors[0] = value
-        # Or create it if the authors list was empty
-        else:
-            authors.append(value)
+    from seagull import Context, Settings
 
 
-@dataclass(repr=False)
+class ContentStatus(StrEnum):
+    """Status of a content object."""
+
+    PUBLISHED = auto()
+    HIDDEN = auto()
+    DRAFT = auto()
+    SKIP = auto()
+
+
+@dataclass
 class Content(SeagullObject):
     """Base class for seagull content."""
 
-    # FIXME use Enum
-    allowed_statuses: ClassVar[tuple[str, ...]] = (
-        "published",
-        "hidden",
-        "draft",
-        "skip",
+    MANDATORY_FIELDS: ClassVar[tuple[str, ...]] = (
+        *SeagullObject.MANDATORY_FIELDS,
+        "title",
+        "lang",
+        "template",
+        "status",
+        "source_path",
+        "summary",
     )
+    # We pre-compile the regexes used by Content._summary to separate and count words
+    _WORD_SPLITTER_REGEX: ClassVar[re.Pattern] = re.compile(
+        r"{DBC}|(\w[\w'-]*)".format(
+            # DBC means CJK-like characters. A character can stand for a word.
+            DBC=(
+                "([\u4e00-\u9fff])|"  # CJK Unified Ideographs
+                "([\u3400-\u4dbf])|"  # CJK Unified Ideographs Extension A
+                "([\uf900-\ufaff])|"  # CJK Compatibility Ideographs
+                "([\U00020000-\U0002a6df])|"  # CJK Unified Ideographs Extension B
+                "([\U0002f800-\U0002fa1f])|"  # CJK Compatibility Ideographs Supplement
+                "([\u3040-\u30ff])|"  # Hiragana and Katakana
+                "([\u1100-\u11ff])|"  # Hangul Jamo
+                "([\uac00-\ud7ff])|"  # Hangul Compatibility Jamo
+                "([\u3130-\u318f])"  # Hangul Syllables
+            )
+        ),
+        re.UNICODE,
+    )
+    _WORD_SEPARATOR_REGEX: ClassVar[re.Pattern] = re.compile(r"\w", re.UNICODE)
 
-    date: datetime | None = None
-    modified: datetime | None = None
-    summary: str = ""
-    tags: list[Tag] = field(default_factory=list)
-    authors: list[Author] = field(default_factory=list)
-    author: AuthorDescriptor = AuthorDescriptor()
-    status: str = "published"
+    modified: datetime | None = field(default=None, compare=False, repr=False)
+    """Last modification date."""
+    status: ContentStatus = field(
+        default=ContentStatus.PUBLISHED, compare=False, repr=False
+    )
+    """Publication status of the content."""
+    summary: str = field(default="", compare=False, repr=False)
+    """Short summary for the content."""
 
     def __post_init__(self) -> None:
+        # We skip objects with a skip status
+        if self.status == ContentStatus.SKIP:
+            raise SkippedFileError(self.source_path)
+
         super().__post_init__()
 
-        if self.status not in self.allowed_statuses:
-            raise ValueError(f"'{self.status}': invalid status")
-
-        # Add tzinfo to our dates if necessary
-        for key in ("date", "modified"):
-            value: datetime
-            if not (value := getattr(self, key)):
+        # Add tzinfo to our date fields if necessary
+        for f in fields(self):
+            key = f.name
+            value = getattr(self, key)
+            if not isinstance(value, datetime):
                 continue
             if not value.tzinfo:
                 setattr(self, key, value.replace(tzinfo=self.settings.timezone))
 
-    def _setting_key_fragments(self, field_name: str) -> list[str]:
-        fragments = super()._setting_key_fragments(field_name)
-        # Add the draft fragment if the content is a draft
-        if self.status == "draft":
-            fragments.insert(0, "draft")
+    @classmethod
+    def from_parsed_metadata(
+        cls,
+        settings: Settings,
+        context: Context,
+        content: str,
+        source_path: Path,
+        base_path: Path,
+        **metadata: object | str,
+    ) -> Self:
+        # Parse the status, raising an InvalidObjectError if it's not a valid status
+        if raw_status := metadata.get("status", ""):
+            try:
+                metadata["status"] = ContentStatus(raw_status)
+            except ValueError as e:
+                raise InvalidObjectError from e
 
-        return fragments
+        # Parse the raw modified date if applicable
+        if raw_modified := metadata.get("modified", "").strip():
+            metadata["modified"] = datetime.fromisoformat(raw_modified)
 
-    def _slugify(self) -> str:
-        # Get the source for the slug
-        match self.settings.slugify_source, self.source_path:
-            case ("title", _):
-                value = self.title
-            case ("basename", path) if path is not None:
-                value = path.stem
-            case _:
-                value = None
-        # If there is no source, return an empty slug
-        if not value:
-            return ""
-        return slugify(text=value, **self.settings.slugify_settings)
-
-    @reserved_property
-    def locale_date(self) -> str:
-        if self.date:
-            return self.date.strftime(self.date_format)
-        return ""
-
-    @reserved_property
-    def locale_modified(self) -> str:
-        if self.modified:
-            return self.modified.strftime(self.date_format)
-        return ""
-
-    @reserved_property
-    def date_format(self) -> str:
-        result = self.settings.date_formats.get(
-            self.lang, self.settings.default_date_format
+        return super().from_parsed_metadata(
+            settings, context, content, source_path, base_path, **metadata
         )
-        # FIXME tuple locale format
-        if isinstance(result, tuple):
-            return result[1]
-        return result
+
+    def _field_setting_key(self, field_name: str) -> str:
+        # Add the draft fragment
+        draft_fragment = "draft" if self.status == ContentStatus.DRAFT else ""
+        return "_".join(
+            f for f in (draft_fragment, super()._field_setting_key(field_name)) if f
+        )
+
+    @property
+    def _summary(self) -> str:
+        """Auto-generate the summary."""
+        # We begin with the whole content
+        summary = self.content
+
+        # Truncate 'summary_max_paragraphs' paragraphs if required
+        if self.settings.summary_max_paragraphs is not None:
+            tag_end = 0
+            paragraphs = []
+            for _ in range(self.settings.summary_max_paragraphs):
+                summary = summary[tag_end:]
+                tag_start = summary.find("<p>")
+                tag_end = summary.find("</p>") + len("</p>")
+                paragraphs.append(summary[tag_start:tag_end])
+            summary = "".join(paragraphs)
+
+        # Truncate 'summary_max_length' words if required
+        if self.settings.summary_max_length is not None:
+            # Let's use BeautifulSoup for that
+            soup = BeautifulSoup(summary, features=self.settings.html_parser)
+            # We empty our summary
+            summary = ""
+            # Keep track of the current number of words processed
+            word_count = 0
+            maximum_reached = False
+            # TODO improve the generation to keep the tags inside the paragraphs, instead of only the text
+            # For each paragraph
+            for s in soup("p"):
+                # Retrieve the text only
+                text = s.text
+                # Open a paragraph
+                summary += "<p>"
+                # While we have words in the paragraph
+                word_end = 0
+                while match := self._WORD_SPLITTER_REGEX.search(text, word_end):
+                    # We retain the last word end, so that we pick up the separating
+                    # characters between the last word and this one
+                    last_word_end, word_end = word_end, match.end()
+                    summary += text[last_word_end:word_end]
+                    # Increment the word count, break if we reached the maximum
+                    word_count += 1
+                    if word_count >= self.settings.summary_max_length:
+                        maximum_reached = True
+                        break
+                # If we've reached the maximum count, add the end suffix
+                if maximum_reached:
+                    summary += self.settings.summary_end_suffix
+                # Close the paragraph
+                summary += "</p>"
+                # And break if we've reached the maximum
+                if maximum_reached:
+                    break
+
+        return summary
+
+    @property
+    def locale_modified(self) -> str:
+        """String-formatted modified date."""
+        if self.modified:
+            return self.modified.strftime(self.settings.date_format)
+        return ""

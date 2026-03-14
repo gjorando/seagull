@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from click_extra import new_extra_logger
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
     from logging import Logger
     from pathlib import Path
 
@@ -18,7 +18,7 @@ def log_with_paths[**P](
     log_callable: Callable,
     msg: str,
     *args: P.args,
-    paths: list[Path],
+    paths: Sequence[Path],
     **kwargs: P.kwargs,
 ) -> None:
     """Log a message with one or more paths attached to it.
@@ -27,7 +27,7 @@ def log_with_paths[**P](
     log methods from a `Logger` instance.
     :param msg: Message format string.
     :param args: Arguments merged into `msg`.
-    :param paths: List of paths to report.
+    :param paths: Paths to report.
     :param kwargs: Other keyword arguments for `log_callable`.
     """
     # Add the list of paths to the format string

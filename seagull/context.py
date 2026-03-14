@@ -1,125 +1,293 @@
 from collections import defaultdict
-from dataclasses import dataclass, field
+from collections.abc import Collection
 from typing import TYPE_CHECKING, Any, cast
 
-from seagull.contents import Author, Category, Tag
+from seagull.contents import (
+    Article,
+    Author,
+    Category,
+    Content,
+    Page,
+    SeagullObject,
+    Static,
+    Tag,
+    Taxonomy,
+)
 from seagull.log import logger
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Iterator
     from pathlib import Path
 
-    from seagull.contents import Article, Content, Page, Static, Taxonomy
 
+class SeagullObjectContextDescriptor[T: Context, C: SeagullObject]:
+    """Descriptor for lists of seagull objects in the context.
 
-@dataclass
-class Context:
-    """Shared context between generators."""
+    It allows to define shorthands for accessing a specific list of objects in a shared
+    context object.
+    """
 
-    # All generated Content objects mapped by source path
-    generated_content: dict[Path, Content | None] = field(default_factory=dict)
-    # All added Static objects
-    static_content: dict[Path, Static | None] = field(default_factory=dict)
-    # Failed source paths
-    failed_source_paths: list[Path] = field(default_factory=list)
-    # List of static links found in the content of all SeagullObject objects
-    static_links: set[Path] = field(default_factory=set)
-    # Per taxonomy type lists of taxonomies
-    taxonomies: dict[type[Taxonomy], list[Taxonomy]] = field(
-        default_factory=lambda: defaultdict(list)
-    )
-    # FIXME replace with cached properties
-    # All articles
-    all_articles: list[Article] = field(default_factory=list)
-    # Hidden articles
-    hidden_articles: list[Article] = field(default_factory=list)
-    # Draft articles
-    drafts: list[Article] = field(default_factory=list)
-    # All articles
-    all_pages: list[Page] = field(default_factory=list)
-    # Hidden articles
-    hidden_pages: list[Page] = field(default_factory=list)
-    # Draft articles
-    draft_pages: list[Page] = field(default_factory=list)
-
-    @property
-    def authors(self) -> list[Author]:
-        """Shorthand for `taxonomies[Author]`."""
-        return cast("list[Author]", self.taxonomies.get(Author, []))
-
-    @property
-    def tags(self) -> list[Tag]:
-        """Shorthand for `taxonomies[Tags]`."""
-        return cast("list[Tag]", self.taxonomies.get(Tag, []))
-
-    @property
-    def categories(self) -> list[Category]:
-        """Shorthand for `taxonomies[Category]`."""
-        return cast("list[Category]", self.taxonomies.get(Category, []))
-
-    @property
-    def base_jinja_context(self) -> dict[str, Any]:
-        """Base context dictionary for Jinja templates rendering.
-
-        The `all_articles` key always contains the full list of articles, while
-        `articles` may be overridden to contain a subset of articles. For instance if
-        we are rendering a taxonomy page, `articles` contains the list of articles in
-        the taxonomy.
+    def __init__(self, obj_class: type[C]):
         """
-        return {
-            "all_articles": self.all_articles,
-            "articles": self.all_articles,
-            "dates": None,  # TODO
-            "hidden_articles": self.hidden_articles,
-            "drafts": self.drafts,
-            "period_archives": None,  # TODO
-            "authors": self.authors,
-            "categories": self.categories,
-            "tags": self.tags,
-            "pages": self.all_pages,
-            "hidden_pages": self.hidden_pages,
-            "draft_pages": self.draft_pages,
-        }
-
-    # TODO would be great to be able to query by slug. We could try first by slug,
-    #  returning the appropriate translation, and if it doesn't find with a slug, try
-    #  the name of the category. It would be great to be able to do the same for
-    #  metadata in articles and pages
-    def taxa_by_name[T: Taxonomy](self, name: str) -> tuple[type[T], list[T]]:
-        """Retrieve a list of taxonomies of a given type by name (case-insensitive).
-
-        :param name: Name of the taxon.
-        :return: The taxon class, and its list in `self.taxonomies`, if it exists.
-        :raise KeyError: If there is no such taxonomy.
+        :param obj_class: Type of seagull object to get.
+        :raise ValueError: If `obj_class` is not a subclass of `SeagullObject`.
         """
-        name = name.lower()
-        for taxon_class, taxa in self.taxonomies.items():
-            class_name = taxon_class.__name__.lower()
-            if name == class_name:
-                return taxon_class, taxa
-        raise KeyError(name)
+        if not issubclass(obj_class, SeagullObject):
+            raise ValueError(obj_class)
+        self.obj_class = obj_class
+
+    def __get__(
+        self, instance: T | None, owner: type[T] | None = None
+    ) -> list[C] | None:
+        """Attribute getter.
+
+        :param instance: A `Context` instance if accessed through the class.
+        :param owner: Owner class.
+        :return: The list of objects, or `None` if class attribute access.
+        """
+        if instance is None:
+            return None
+        return instance.objects[self.obj_class]
+
+
+class Context(Collection[SeagullObject]):
+    """Shared context for a seagull run."""
+
+    authors: list[Author] = SeagullObjectContextDescriptor(Author)
+    tags: list[Tag] = SeagullObjectContextDescriptor(Tag)
+    categories: list[Category] = SeagullObjectContextDescriptor(Category)
+    articles: list[Article] = SeagullObjectContextDescriptor(Article)
+    pages: list[Page] = SeagullObjectContextDescriptor(Page)
+    static: list[Static] = SeagullObjectContextDescriptor(Static)
+
+    def __init__(self) -> None:
+        self.objects: dict[type[SeagullObject], list[SeagullObject]] = defaultdict(list)
+        self.static_links: set[Path] = set()
+        self.failed_source_paths: set[Path] = set()
+
+    def filter_objects[T: SeagullObject](
+        self, function: Callable[[T], bool] | None, obj_class: type[T]
+    ) -> Iterable[T]:
+        """Filter a specific list of objects.
+
+        :param function: The filtering function.
+        :param obj_class: The type of seagull object to filter.
+        :return: The filtered list of objects.
+        :raise ValueError: If `obj_class` is not a subclass of `SeagullObject`.
+        """
+        if not issubclass(obj_class, SeagullObject):
+            raise ValueError(obj_class)
+        return filter(function, self.objects[obj_class])
+
+    def content_by_status[T: Content](
+        self, status: str, content_class: type[T]
+    ) -> Iterable[T]:
+        """Iterate over `Content` objects of a specific status.
+
+        :param content_class: The type of content to filter.
+        :param status: Status of the articles to retrieve.
+        :return: Iterable of objects.
+        :raise ValueError: If `obj_class` is not a subclass of `SeagullObject`.
+        """
+
+        def filter_func(obj: Content) -> bool:
+            return obj.status == status
+
+        return self.filter_objects(filter_func, content_class)
 
     def get_or_new_taxon[T: Taxonomy](
-        self, taxon_class: type[T], name: str, **kwargs: dict
+        self,
+        taxon_class_or_name: type[T] | str,
+        slug_or_name: str,
+        target_lang: str | None = None,
+        **kwargs: object,
     ) -> T:
-        """Retrieve a taxonomy object from its name.
+        """Get or create a taxonomy object.
 
-        If it doesn't already exist, it is created and stored in
-        `self.taxonomies[taxon_class]`.
+        We try to retrieve it based on the slug if the taxon is a preprocessed one, or
+        by name otherwise. If such a taxonomy doesn't exist, it is created using
+        `kwargs`, and stored in `self.objects[taxon_class]`.
 
-        :param taxon_class: `Taxonomy` subclass.
-        :param name: Name of the taxonomy to look for.
-        :param kwargs: Other metadata attributes for the taxon if it needs to be
+        :param taxon_class_or_name: `Taxonomy` subclass or name (case-insensitive).
+        :param slug_or_name: Name of the taxonomy to look for.
+        :param target_lang: Optional lang to target. This allows us to differentiate
+        translations of a given taxon.
+        :param kwargs: Metadata attributes for the taxon if it needs to be
         created.
         :return: A taxonomy object.
+        :raise ValueError: If `taxon_class_or_name` doesn't refer to a subclass of
+        `Taxonomy`.
         """
-        # We look for an existing taxon in the appropriate list of existing taxa
-        taxon_list = self.taxonomies[taxon_class]
-        for taxon in taxon_list:
-            if taxon.name == name:
-                return taxon
+        try:
+            taxon_class: type[T] = (
+                # If taxon_class_or_name is a name, retrieve the corresponding class
+                next(
+                    filter(
+                        lambda cls: cls.__name__.lower() == taxon_class_or_name.lower(),
+                        Taxonomy.all_object_types(),
+                    )
+                )
+                if isinstance(taxon_class_or_name, str)
+                else taxon_class_or_name
+            )
+        except StopIteration:
+            raise ValueError(taxon_class_or_name) from None
+        if not issubclass(taxon_class, Taxonomy):
+            raise ValueError(taxon_class_or_name)
+        candidates = list(
+            filter(
+                lambda t: (
+                    # If source_path is set, it was a preprocessed taxon; try retrieving
+                    # an existing taxon by slug
+                    (t.slug == slug_or_name)
+                    if t.source_path is not None
+                    # If source_path is None, it means it was not a preprocessed taxon;
+                    # try retrieving an existing taxon by name
+                    else (t.name == slug_or_name)
+                )
+                # We also want the taxon with the target lang if we have one, or the
+                # taxon in default lang otherwise
+                and ((t.lang == target_lang) if target_lang else t.in_default_lang),
+                self.objects[taxon_class],
+            )
+        )
+        if len(candidates) == 1:
+            return candidates[0]
+        if len(candidates) != 0:
+            # This shouldn't happen normally
+            logger.warning(
+                f"Multiple candidates for taxon of type '{taxon_class.__name__}' named "
+                f"'{slug_or_name}'."
+            )
+            return candidates[0]
+
         # If we're here, it means we have a new taxon, so we create it
-        logger.debug(f"Creating a new '{taxon_class.__name__}' named '{name}'.")
-        taxon = taxon_class(title=name, **kwargs)
+        logger.debug(
+            f"Creating a new {taxon_class.__name__.lower()} named '{kwargs['title']}'."
+        )
+        taxon = taxon_class(**kwargs)
         # We add it to our list of taxa
-        taxon_list.append(taxon)
+        self.objects[taxon_class].append(taxon)
         return taxon
+
+    def get_by_type[T: SeagullObject](
+        self, obj_class_or_name: type[T] | str
+    ) -> list[T]:
+        """Get a list of objects by type.
+
+        :param obj_class_or_name: Either the type of object, or the name of the type
+        (case-insensitive).
+        :return: The list of objects.
+        :raise KeyError: If `obj_class_or_name` doesn't refer to a subclass of
+        `SeagullObject`.
+        """
+        # Try retrieving the object class by name
+        if isinstance(obj_class_or_name, str):
+            try:
+                obj_class_or_name = next(
+                    filter(
+                        lambda cls: cls.__name__.lower() == obj_class_or_name.lower(),
+                        SeagullObject.all_object_types(),
+                    )
+                )
+            except StopIteration:
+                raise KeyError(obj_class_or_name) from None
+        # Otherwise, we have a class, check that it's a subclass of SeagullObject
+        elif not issubclass(obj_class_or_name, SeagullObject):
+            raise KeyError(obj_class_or_name)
+        return self.objects[obj_class_or_name]
+
+    def base_jinja_context(self, lang: str | None = None) -> dict[str, Any]:
+        """Base context dictionary for Jinja templates rendering.
+
+        The `all_articles` key always contains the full list of published articles,
+        while `articles` may be overridden to contain a subset of articles. For instance
+        if we are rendering a taxonomy page, `articles` contains the list of articles in
+        the taxonomy.
+
+        :param lang: If set, only returns context relevant for this lang.
+        """
+
+        def lang_filter(obj: SeagullObject) -> bool:
+            return obj.lang == lang
+
+        all_articles = list(filter(lang_filter, self.published_articles))
+        return {
+            "all_articles": all_articles,
+            "articles": all_articles,
+            "hidden_articles": list(filter(lang_filter, self.hidden_articles)),
+            "drafts": list(filter(lang_filter, self.draft_articles)),
+            "period_archives": None,  # TODO
+            "authors": list(filter(lang_filter, self.authors)),
+            "categories": list(filter(lang_filter, self.categories)),
+            "tags": list(filter(lang_filter, self.tags)),
+            "pages": list(filter(lang_filter, self.published_pages)),
+            "hidden_pages": list(filter(lang_filter, self.hidden_pages)),
+            "draft_pages": list(filter(lang_filter, self.draft_pages)),
+        }
+
+    @property
+    def published_articles(self) -> Iterable[Article]:
+        return self.content_by_status(status="published", content_class=Article)
+
+    @property
+    def hidden_articles(self) -> Iterable[Article]:
+        return self.content_by_status(status="hidden", content_class=Article)
+
+    @property
+    def draft_articles(self) -> Iterable[Article]:
+        return self.content_by_status(status="draft", content_class=Article)
+
+    @property
+    def published_pages(self) -> Iterable[Page]:
+        return self.content_by_status(status="published", content_class=Page)
+
+    @property
+    def hidden_pages(self) -> Iterable[Page]:
+        return self.content_by_status(status="hidden", content_class=Page)
+
+    @property
+    def draft_pages(self) -> Iterable[Page]:
+        return self.content_by_status(status="draft", content_class=Page)
+
+    @property
+    def taxonomies(self) -> dict[type[Taxonomy], list[Taxonomy]]:
+        """Retrieve a dictionary with all taxonomy objects, mapped by type."""
+        return {
+            k: cast("list[Taxonomy]", v)
+            for k, v in self.objects.items()
+            if issubclass(k, Taxonomy)
+        }
+
+    @property
+    def generated_content(self) -> dict[Path, Content]:
+        """Generated content, mapped by source path."""
+        return {
+            # FIXME this cast shouldn't be necessary, if we ensure that self.objects typing understands that each sublist only stores objects of the type of the key
+            obj.source_path: cast("Content", obj)
+            for content_class, content_list in self.objects.items()
+            for obj in content_list
+            if issubclass(content_class, Content) and obj.source_path is not None
+        }
+
+    @property
+    def static_content(self) -> dict[Path, Static]:
+        """Static files, mapped by source path."""
+        return {obj.source_path: cast("Static", obj) for obj in self.objects[Static]}
+
+    def __len__(self) -> int:
+        """Number of seagull objects in the context."""
+        return len(self.objects)
+
+    def __iter__(self) -> Iterator[SeagullObject]:
+        """Iterate over all seagull objects in the context."""
+        for v in self.objects.values():
+            yield from v
+
+    def __contains__(self, obj: object, /) -> bool:
+        """Test if an object is a seagull object in the context.
+
+        :param obj: Value to test.
+        :return: `True` if `obj` is a seagull object registered in the context.
+        """
+        return isinstance(obj, SeagullObject) and obj in self.objects[obj.__class__]

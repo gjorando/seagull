@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
     {% block content_title %}
-        <h2>All articles</h2>
+        <h2>{{ _("All articles") }}</h2>
     {% endblock %}
 
     {% if obj.content %}
@@ -16,10 +16,10 @@
                            title="Permalink to {{ article.title|striptags }}">{{ article.title }}</a></h2></header>
             <section>{{ article.summary }}</section>
             <footer>
-                <p>Published:
+                <p>{{ _("Published:") }}
                     <time datetime="{{ article.date.isoformat() }}"> {{ article.locale_date }} </time>
                 </p>
-                <address>By
+                <address>{{ _("By") }}
                     {% for author in article.authors %}
                         <a href="{{ siteurl }}/{{ author.url }}">{{ author.name }}</a>
                     {% endfor %}

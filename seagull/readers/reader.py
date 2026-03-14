@@ -5,9 +5,7 @@ from datetime import datetime
 from itertools import chain
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 
-from seagull.exceptions import DiscardMetadataError, SkippedFileError
 from seagull.log import logger
-from seagull.readers.metadata_processors import MetadataProcessor
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -25,8 +23,6 @@ class Reader(ABC):
 
     enabled: bool = True
     file_extensions: ClassVar[list[str | None]] = []
-    _instances: ClassVar[dict[type[Reader], Reader]] = {}
-    _per_extension: ClassVar[dict[str | None, Reader]] = {}
 
     def __init__(self, settings: Settings):
         """Create a new `Reader`.
@@ -45,29 +41,23 @@ class Reader(ABC):
                 yield reader
 
     @classmethod
-    def from_extension(cls, settings: Settings, extension: str | None) -> Self:
-        """Return a reader instance that's suitable for a given file extension. It
-        automatically creates an instance if it doesn't exist already.
+    def from_extension(cls, extension: str | None) -> type[Self]:
+        """Return a reader class that's suitable for a given file extension.
 
-        :param settings: Settings to initialize the reader with.
         :param extension: File extension (with or without leading dot). `None` is used
         as a special value for static files.
-        :return: A `Reader` subclass instance.
+        :return: A `Reader` subclass.
         :raise KeyError: If there is no suitable reader class for the extension.
         """
         # Remove the leading dot if the extension is not None
         if isinstance(extension, str) and extension.startswith("."):
             extension = extension[1:]
-        # If we already encountered this extension, directly retrieve the reader
-        if extension in cls._per_extension:
-            return cls._per_extension[extension]
-
-        # Otherwise, look for a suitable reader
+        # Look for a suitable reader
         candidates = [r for r in cls.all_readers() if extension in r.file_extensions]
         # Raise an exception if no reader was found
         if not candidates:
             raise KeyError(extension)
-        # FIXME maybe find the most specialized subclass instead
+        # TODO maybe find the most specialized subclass instead
         reader_class = candidates[0]
         # Log a warning if more than one reader is suitable for this extension
         if len(candidates) > 1:
@@ -76,13 +66,7 @@ class Reader(ABC):
                 f"Found {len(candidates)} readers for {file_type},"
                 f"{reader_class.__name__} will be used."
             )
-        # Create the reader instance if it doesn't already exist
-        if reader_class not in cls._instances:
-            cls._instances[reader_class] = reader_class(settings)
-        # Associate the extension to the reader instance
-        cls._per_extension[extension] = cls._instances[reader_class]
-        # Return the reader instance
-        return cls._instances[reader_class]
+        return reader_class
 
     @abstractmethod
     def _parse_data(self, path: Path) -> tuple[str, dict[str, Any]]:
@@ -92,7 +76,6 @@ class Reader(ABC):
         :return: Parsed content and unprocessed metadata dictionary.
         """
 
-    # FIXME remove default fields that aren't in the dataclass fields of the content class?
     def _default_metadata[T: SeagullObject](
         self, path: Path, content_class: type[T], base_path: Path
     ) -> dict[str, Any]:
@@ -103,6 +86,7 @@ class Reader(ABC):
         :param base_path: Base path of the source file.
         :return: A dictionary of unprocessed metadata attributes.
         """
+
         metadata = {}
         # Defaults from settings
         for key, value in chain(
@@ -161,6 +145,7 @@ class Reader(ABC):
             for key, value in match.groupdict().items():
                 if value:
                     metadata[key.lower()] = value
+
         return metadata
 
     def read_file[T: SeagullObject](
@@ -168,7 +153,7 @@ class Reader(ABC):
         path: Path,
         content_class: type[T],
         context: Context,
-        base_path: Path | None = None,
+        base_path: Path,
     ) -> T:
         """Parse a file to return a content object.
 
@@ -179,31 +164,14 @@ class Reader(ABC):
         :param path: Absolute path of the source file.
         :param content_class: Class of the content object to create.
         :param context: Shared `Context` object for the run.
-        :param base_path: Base path of the source file. If `None`, it is assumed to be
-        that of the content object.
+        :param base_path: Base path of the source file.
         :return: A new seagull object.
-        :raise SkippedFileException: If the file should be skipped.
+        :raise SkippedFileError: If the file should be skipped.
         """
-        if not base_path:
-            base_path = getattr(self.settings, content_class.default_base_path_key)
         log_path = path.relative_to(base_path.parent)
         logger.debug(
             f"Parsing '{log_path}' into an object of type '{content_class.__name__}'."
         )
-        content_fields = [f.name for f in fields(content_class)]
-        is_extra_dataclass = getattr(content_class, "__extra_dataclass__", False)
-
-        def _process_metadata(k: str, v: object, dest: dict[str, object]) -> None:
-            try:
-                # If the content class doesn't accept extra metadata and the key is not
-                # a regular field, discard it
-                if k not in content_fields and not is_extra_dataclass:
-                    raise DiscardMetadataError(k)
-                dest[k] = MetadataProcessor.process(
-                    k, v, settings=self.settings, context=context
-                )
-            except DiscardMetadataError:
-                dest.pop(k, None)
 
         # Get the default metadata
         metadata = self._default_metadata(path, content_class, base_path)
@@ -215,16 +183,14 @@ class Reader(ABC):
         if "author" in reader_metadata or "authors" in reader_metadata:
             metadata.pop("author", None)
             metadata.pop("authors", None)
-        # Process metadata
+
+        # Apply the parsed metadata to the defaults
         metadata.update(reader_metadata)
-        # We iterate over a list copy, because _process_metadata can remove keys from
-        # the metadata dict
-        for key, value in list(metadata.items()):
-            _process_metadata(key, value, metadata)
-
-        # We skip items who have a skip status, or those whose output path has been
-        # explicitly set to an empty value
-        if metadata.get("status") == "skip" or not metadata.get("save_as", True):
-            raise SkippedFileError(path)
-
-        return content_class(self.settings, content, path, base_path, **metadata)
+        return content_class.from_parsed_metadata(
+            settings=self.settings,
+            context=context,
+            content=content,
+            source_path=path,
+            base_path=base_path,
+            **metadata,
+        )

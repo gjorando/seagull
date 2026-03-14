@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}{{ sitename|striptags }} - Categories{% endblock %}
+{% block title %}{{ sitename|striptags }} - {{ _("Categories") }}{% endblock %}
 
 {% block content %}
-    <h2>Categories on {{ sitename }}</h2>
+    <h2>{% trans trimmed %}Categories on {{ sitename }}{% endtrans %}</h2>
     <ul>
         {% for category in categories|sort %}
             <li><a href="{{ siteurl }}/{{ category.url }}">{{ category.name }}</a> ({{ category.articles|count }})</li>

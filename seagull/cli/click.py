@@ -3,6 +3,7 @@ import json
 import logging
 from logging import Logger
 from pathlib import Path
+from pprint import pformat
 from typing import TYPE_CHECKING, Any
 
 import click_extra as clickx
@@ -58,43 +59,69 @@ class JsonKeyValueType(clickx.ParamType):
             raise clickx.BadParameter("Invalid key-value pair(s)", ctx, param) from None
 
 
-class SeagullSettingsType(clickx.Path):
-    """Load a Seagull settings module.
+def parse_overrides(settings_path: Path, overrides: dict[str, Any]) -> None:
+    """Parse the command line overrides inplace.
 
-    The order in which parameters and arguments decorators are declared is important.
-    All click options that are settings overrides should come before the
-    `SeagullSettingsType` parameter, and other CLI options should come after.
+    It keeps valid setting keys, extend it with `extra_settings`, and removes unset
+    values.
+    :param settings_path: Path to the settings file.
+    :param overrides: Parsed command line options.
     """
+    # The working directory will be the directory containing the settings file
+    cwd = settings_path.parent
+    # Put the extra settings aside for now
+    extra_settings = overrides.pop("extra_settings", {})
+    for key in list(overrides):
+        value = overrides.pop(key)
+        # Rewrite all path overrides so that they're relative to the settings file
+        if isinstance(value, Path):
+            value = value.relative_to(cwd, walk_up=True)
+        # Only re-insert valid setting keys; "path" (lowercase) is valid because click
+        # forces the names of arguments to be lowercase
+        if not (Settings.is_valid_param_key(key) or key == "path"):
+            continue
+        # If a value override is unset, ignore it so that it doesn't override the
+        # value in the settings file
+        if value is None:
+            continue
+        overrides[key.upper()] = value
+    # Update our params with the extra settings overrides
+    overrides.update(extra_settings)
 
-    def __init__(self) -> None:
-        super().__init__(exists=True, dir_okay=False, path_type=Path)
 
-    def convert(
-        self,
-        value: str | Path,
-        param: clickx.Parameter | None,
-        ctx: clickx.Context | None,
-    ) -> Settings:
-        """Load a settings module into a `Settings` instance."""
-        path = super().convert(value, param, ctx)
-        cli_overrides = {}
-
-        for key in list(ctx.params.keys()):
-            # "path" (lowercase) is valid because click forces the names of arguments to
-            # be lowercase
-            if Settings.is_valid_param_key(key) or key == "path":
-                # Remove parameter overrides from the parsed click params
-                override = ctx.params.pop(key)
-                # If a value override is unset, ignore it so that it doesn't override
-                # the value in the settings file
-                if override is not None:
-                    cli_overrides[key.upper()] = override
-
-        # Update our kwargs with the extra settings overrides
-        cli_overrides.update(ctx.params.pop("extra_settings"))
-
-        # Load the settings from the settings module
-        return Settings.from_settings_file(path, **cli_overrides)
+def do_print_settings(ctx: clickx.Context, _: clickx.Parameter, value: object) -> None:
+    """Print the settings on the command line and exit."""
+    if not value or ctx.resilient_parsing:
+        return
+    # Retrieve the settings path
+    settings_path = ctx.params.pop("settings_path", None)
+    # Fallback to the parameter's default value
+    if not settings_path:
+        settings_path = Path(
+            next(
+                filter(lambda p: p.name == "settings_path", ctx.command.params)
+            ).default
+        )
+        if not settings_path.is_file():
+            ctx.fail(f"Settings file '{settings_path}' not found.")
+    # Parse the overrides
+    overrides = ctx.params
+    parse_overrides(settings_path, overrides)
+    # Load the settings and display its values
+    settings = Settings.from_settings_file(settings_path, **overrides)
+    settings_dict = settings.as_dict()
+    for k, v in settings_dict.items():
+        if k.startswith("_"):
+            continue
+        match v:
+            case dict() | list():
+                display_value = pformat(v)
+            case Path() | str():
+                display_value = f"'{v}'"
+            case _:
+                display_value = str(v)
+        clickx.echo(f"{k.upper()}={display_value}")
+    ctx.exit()
 
 
 class IPAddressType(clickx.ParamType):

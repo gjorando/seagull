@@ -1,0 +1,103 @@
+# Translations template for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-03-11 09:09-0400\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: templates/archives.html:3
+msgid "Archives"
+msgstr ""
+
+#: templates/archives.html:6
+#, python-format
+msgid "Archives for %(sitename)s"
+msgstr ""
+
+#: templates/article.html:36 templates/index.html:19
+msgid "Published:"
+msgstr ""
+
+#: templates/article.html:42 templates/page.html:28
+msgid "Last updated:"
+msgstr ""
+
+#: templates/article.html:50 templates/index.html:22
+msgid "By"
+msgstr ""
+
+#: templates/article.html:58
+msgid "Category:"
+msgstr ""
+
+#: templates/article.html:64
+msgid "Tags:"
+msgstr ""
+
+#: templates/author.html:3 templates/author.html:7
+#, python-format
+msgid "Articles by %(author_name)s"
+msgstr ""
+
+#: templates/authors.html:3
+msgid "Authors"
+msgstr ""
+
+#: templates/authors.html:6
+#, python-format
+msgid "Authors on %(sitename)s"
+msgstr ""
+
+#: templates/base.html:143
+#, python-format
+msgid "Proudly powered by <a rel=\"nofollow\" href=\"%(site_url)s\">Seagull</a>, which takes great advantage of <a rel=\"nofollow\" href=\"%(python_url)s\">Python</a>."
+msgstr ""
+
+#: templates/categories.html:3
+msgid "Categories"
+msgstr ""
+
+#: templates/categories.html:6
+#, python-format
+msgid "Categories on %(sitename)s"
+msgstr ""
+
+#: templates/category.html:4
+#, python-format
+msgid "%(category_name)s category"
+msgstr ""
+
+#: templates/category.html:7
+#, python-format
+msgid "Articles in the %(category_name)s category"
+msgstr ""
+
+#: templates/index.html:4
+msgid "All articles"
+msgstr ""
+
+#: templates/tag.html:4
+#, python-format
+msgid "%(tag_name)s tag"
+msgstr ""
+
+#: templates/tag.html:7
+#, python-format
+msgid "Articles tagged with %(tag_name)s"
+msgstr ""
+
+#: templates/translations.html:3
+msgid "Translations:"
+msgstr ""
