@@ -43,11 +43,17 @@
 
 
 
+
+
+
                             {% if category_feed_atom_url %}{{ category_feed_atom_url.format(slug=category.slug) }}{% else %}{{ category_feed_atom.format(slug=category.slug) }}{% endif %}"
                       type="application/atom+xml" rel="alternate" title="{{ sitename|striptags }} Categories Atom Feed"/>
             {% endif %}
             {% if category_feed_rss and category %}
                 <link href="{{ feed_domain }}/
+
+
+
                             {% if category_feed_rss_url %}{{ category_feed_rss_url.format(slug=category.slug) }}{% else %}{{ category_feed_rss.format(slug=category.slug) }}{% endif %}"
                       type="application/rss+xml" rel="alternate" title="{{ sitename|striptags }} Categories RSS Feed"/>
             {% endif %}
@@ -55,11 +61,17 @@
                 <link href="{{ feed_domain }}/
 
 
+
+
+
                             {% if tag_feed_atom_url %}{{ tag_feed_atom_url.format(slug=tag.slug) }}{% else %}{{ tag_feed_atom.format(slug=tag.slug) }}{% endif %}"
                       type="application/atom+xml" rel="alternate" title="{{ sitename|striptags }} Tags Atom Feed"/>
             {% endif %}
             {% if tag_feed_rss and tag %}
                 <link href="{{ feed_domain }}/
+
+
+
 
                             {% if tag_feed_rss_url %}{{ tag_feed_rss_url.format(slug=tag.slug) }}{% else %}{{ tag_feed_rss.format(slug=tag.slug) }}{% endif %}"
                       type="application/rss+xml" rel="alternate" title="{{ sitename|striptags }} Tags RSS Feed"/>

@@ -86,58 +86,78 @@ class Settings:
 
     # URL settings
     relative_urls: bool = False
-    article_url: str = "{slug}.html"
-    article_save_as: Path | None = Path("{slug}.html")
-    article_lang_url: str = "{slug}-{lang}.html"
-    article_lang_save_as: Path | None = Path("{slug}-{lang}.html")
+    article_url: str = "{date:%Y}/{date:%m}/{date:%d}/{slug}/"
+    article_save_as: Path | None = Path(
+        "{date:%Y}/{date:%m}/{date:%d}/{slug}/index.html"
+    )
+    article_lang_url: str = "{lang}/{date:%Y}/{date:%m}/{date:%d}/{slug}/"
+    article_lang_save_as: Path | None = Path(
+        "{lang}/{date:%Y}/{date:%m}/{date:%d}/{slug}/index.html"
+    )
     draft_url: str = "drafts/{slug}.html"
     draft_save_as: Path | None = Path("drafts/{slug}.html")
     draft_lang_url: str = "drafts/{slug}-{lang}.html"
     draft_lang_save_as: Path | None = Path("drafts/{slug}-{lang}.html")
-    page_url: str = "pages/{slug}.html"
-    page_save_as: Path | None = Path("pages/{slug}.html")
-    page_lang_url: str = "pages/{slug}-{lang}.html"
-    page_lang_save_as: Path | None = Path("pages/{slug}-{lang}.html")
+    page_url: str = "pages/{slug}/"
+    page_save_as: Path | None = Path("pages/{slug}/index.html")
+    page_lang_url: str = "{lang}/pages/{slug}/"
+    page_lang_save_as: Path | None = Path("{lang}/pages/{slug}/index.html")
     draft_page_url: str = "drafts/pages/{slug}.html"
     draft_page_save_as: Path | None = Path("drafts/pages/{slug}.html")
     draft_page_lang_url: str = "drafts/pages/{slug}-{lang}.html"
     draft_page_lang_save_as: Path | None = Path("drafts/pages/{slug}-{lang}.html")
-    author_url: str = "author/{slug}.html"
-    author_save_as: Path | None = Path("author/{slug}.html")
-    author_lang_url: str = "author/{slug}-{lang}.html"
-    author_lang_save_as: Path | None = Path("author/{slug}-{lang}.html")
-    category_url: str = "category/{slug}.html"
-    category_save_as: Path | None = Path("category/{slug}.html")
-    category_lang_url: str = "category/{slug}-{lang}.html"
-    category_lang_save_as: Path | None = Path("category/{slug}-{lang}.html")
-    tag_url: str = "tag/{slug}.html"
-    tag_save_as: Path | None = Path("tag/{slug}.html")
-    tag_lang_url: str = "tag/{slug}-{lang}.html"
-    tag_lang_save_as: Path | None = Path("tag/{slug}-{lang}.html")
-    archives_url: str = "archives.html"
-    archives_save_as: Path | None = Path("archives.html")
-    archives_lang_url: str = "archives-{lang}.html"
-    archives_lang_save_as: Path | None = Path("archives-{lang}.html")
-    authors_url: str = "authors.html"
-    authors_save_as: Path | None = Path("authors.html")
-    authors_lang_url: str = "authors-{lang}.html"
-    authors_lang_save_as: Path | None = Path("authors-{lang}.html")
-    categories_url: str = "categories.html"
-    categories_save_as: Path | None = Path("categories.html")
-    categories_lang_url: str = "categories-{lang}.html"
-    categories_lang_save_as: Path | None = Path("categories-{lang}.html")
-    tags_url: str = "tags.html"
-    tags_save_as: Path | None = Path("tags.html")
-    tags_lang_url: str = "tags-{lang}.html"
-    tags_lang_save_as: Path | None = Path("tags-{lang}.html")
-    index_url: str = "index.html"
+    author_url: str = "author/{slug}"
+    author_save_as: Path | None = Path("author/{slug}/index.html")
+    author_lang_url: str = "{lang}/author/{slug}/"
+    author_lang_save_as: Path | None = Path("{lang}/author/{slug}/index.html")
+    category_url: str = "category/{slug}/"
+    category_save_as: Path | None = Path("category/{slug}/index.html")
+    category_lang_url: str = "{lang}/category/{slug}/"
+    category_lang_save_as: Path | None = Path("{lang}/category/{slug}/index.html")
+    tag_url: str = "tag/{slug}/"
+    tag_save_as: Path | None = Path("tag/{slug}/index.html")
+    tag_lang_url: str = "{lang}/tag/{slug}/"
+    tag_lang_save_as: Path | None = Path("{lang}/tag/{slug}/index.html")
+    year_archive_url: str = "archives/{date:%Y}/"
+    year_archive_save_as: Path | None = Path("archives/{date:%Y}/index.html")
+    year_archive_lang_url: str = "{lang}/archives/{date:%Y}/"
+    year_archive_lang_save_as: Path | None = Path(
+        "{lang}/archives/{date:%Y}/index.html"
+    )
+    month_archive_url: str = "archives/{date:%Y}/{date:%m}/"
+    month_archive_save_as: Path | None = Path("archives/{date:%Y}/{date:%m}/index.html")
+    month_archive_lang_url: str = "{lang}/archives/{date:%Y}/{date:%m}/"
+    month_archive_lang_save_as: Path | None = Path(
+        "{lang}/archives/{date:%Y}/{date:%m}/index.html"
+    )
+    day_archive_url: str = ""
+    day_archive_save_as: Path | None = None
+    day_archive_lang_url: str = ""
+    day_archive_lang_save_as: Path | None = None
+    archives_url: str = "archives/"
+    archives_save_as: Path | None = Path("archives/index.html")
+    archives_lang_url: str = "{lang}/archives/"
+    archives_lang_save_as: Path | None = Path("{lang}/archives/index.html")
+    authors_url: str = "authors/"
+    authors_save_as: Path | None = Path("authors/index.html")
+    authors_lang_url: str = "{lang}/authors/"
+    authors_lang_save_as: Path | None = Path("{lang}/authors/index.html")
+    categories_url: str = "categories/"
+    categories_save_as: Path | None = Path("categories/index.html")
+    categories_lang_url: str = "{lang}/categories/"
+    categories_lang_save_as: Path | None = Path("{lang}/categories/index.html")
+    tags_url: str = "tags/"
+    tags_save_as: Path | None = Path("tags/index.html")
+    tags_lang_url: str = "{lang}/tags/"
+    tags_lang_save_as: Path | None = Path("{lang}/tags/index.html")
+    index_url: str = "/"
     index_save_as: Path | None = Path("index.html")
-    index_lang_url: str = "index-{lang}.html"
-    index_lang_save_as: Path | None = Path("index-{lang}.html")
-    direct_template_url: str = "{slug}.html"
-    direct_template_save_as: Path | None = Path("{slug}.html")
-    direct_template_lang_url: str = "{slug}-{lang}.html"
-    direct_template_lang_save_as: Path | None = Path("{slug}-{lang}.html")
+    index_lang_url: str = "{lang}/"
+    index_lang_save_as: Path | None = Path("{lang}/index.html")
+    direct_template_url: str = "{slug}/"
+    direct_template_save_as: Path | None = Path("{slug}/index.html")
+    direct_template_lang_url: str = "{lang}/{slug}/"
+    direct_template_lang_save_as: Path | None = Path("{lang}/{slug}/index.html")
     slugify_source: str = "title"
     slugify_settings: dict[str, Any] = field(default_factory=dict)
     author_slugify_settings: dict[str, Any] | None = None

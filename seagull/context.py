@@ -7,6 +7,7 @@ from seagull.contents import (
     Author,
     Category,
     Content,
+    GranularArchive,
     Page,
     SeagullObject,
     Static,
@@ -211,19 +212,25 @@ class Context(Collection[SeagullObject]):
         def lang_filter(obj: SeagullObject) -> bool:
             return obj.lang == lang
 
+        period_archives = defaultdict(list)
+        obj: GranularArchive
+        for obj in self.filter_objects(lang_filter, GranularArchive):
+            period_archives[obj.granularity.value].append(obj)
+
         all_articles = list(filter(lang_filter, self.published_articles))
         return {
             "all_articles": all_articles,
             "articles": all_articles,
             "hidden_articles": list(filter(lang_filter, self.hidden_articles)),
             "drafts": list(filter(lang_filter, self.draft_articles)),
-            "period_archives": None,  # TODO
+            "period_archives": period_archives,
             "authors": list(filter(lang_filter, self.authors)),
             "categories": list(filter(lang_filter, self.categories)),
             "tags": list(filter(lang_filter, self.tags)),
             "pages": list(filter(lang_filter, self.published_pages)),
             "hidden_pages": list(filter(lang_filter, self.hidden_pages)),
             "draft_pages": list(filter(lang_filter, self.draft_pages)),
+            "index_url": "",  # FIXME
         }
 
     @property

@@ -7,7 +7,8 @@ from seagull.contents import Author, Category, Tag
 from seagull.context import Context
 from seagull.generators import (
     ArticlesGenerator,
-    DirectTemplateGenerator,
+    DirectTemplatesGenerator,
+    GranularArchivesGenerator,
     PagesGenerator,
     StaticGenerator,
     TaxonomyGenerator,
@@ -38,8 +39,9 @@ class Seagull:
             partial(TaxonomyGenerator, content_class=Tag),
             ArticlesGenerator,
             PagesGenerator,
-            # DirectTemplateGenerator must always come after content generators
-            DirectTemplateGenerator,
+            # DirectTemplatesGenerator must always come after content generators
+            DirectTemplatesGenerator,
+            GranularArchivesGenerator,
             # StaticGenerator must always come last
             StaticGenerator,
             partial(StaticGenerator, theme_static=True),
@@ -129,6 +131,7 @@ class Seagull:
         for g in generators:
             g.link_translations()
 
+        # FIXME Doesn't work with lists already in taxonomies and period archives
         # Then, we sort every list of seagull objects
         for object_class, object_list in context.objects.items():
             # Get the setting for the type of object
@@ -153,18 +156,10 @@ class Seagull:
     @staticmethod
     def _run_stats(context: Context) -> None:
         """Display some stats about a run."""
+        # Number of generated objects, per type
         for object_class, objs in context.objects.items():
-            object_name = object_class.__name__.lower()
-            if object_name.endswith("y"):
-                name_fstring = f"{object_name[:-1]}{{objs:plural,y,ies}}"
-            elif object_name == "static":
-                name_fstring = "static file{objs:plural,s}"
-            else:
-                name_fstring = f"{object_name}{{objs:plural,s}}"
             logger.info(
-                PluralFormatter().format(
-                    f"Processed {{objs}} {name_fstring}.", objs=len(objs)
-                )
+                f"Processed {len(objs)} {object_class.printable_name(len(objs))}."
             )
         # Log failed source paths
         if context.failed_source_paths:

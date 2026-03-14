@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
     {% block content_title %}
+        {# FIXME add the possibility to use obj.title directly? #}
+        {# This would mean maybe add the option to read the direct templates from the disk...? #}
         <h2>{{ _("All articles") }}</h2>
     {% endblock %}
 

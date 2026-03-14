@@ -12,13 +12,10 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 
-class DirectTemplateGenerator[T: DirectTemplate](Generator):
+class DirectTemplatesGenerator[T: DirectTemplate](Generator):
     """Generator for direct templates, such as 'index' or 'categories'."""
 
     content_class: type[T] = DirectTemplate
-
-    def add_object_to_context(self, obj: T) -> None:
-        pass
 
     def _create_objects(self) -> list[T]:
         """Create the objects for each direct template.
@@ -30,7 +27,6 @@ class DirectTemplateGenerator[T: DirectTemplate](Generator):
         """
         existing_save_as = [o.save_as for o in self.context]
         all_content = []
-        # TODO translations
         # TODO pagination
         for template_name, template_lang in product(
             self.settings.direct_templates,
@@ -39,7 +35,6 @@ class DirectTemplateGenerator[T: DirectTemplate](Generator):
             try:
                 obj = self.content_class(
                     settings=self.settings,
-                    title=template_name,
                     lang=template_lang,
                     template=template_name,
                 )

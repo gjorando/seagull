@@ -8,6 +8,7 @@ from slugify import slugify
 
 from seagull.exceptions import InvalidObjectError, SkippedFileError
 from seagull.intrasite_link_parser import IntrasiteLinkParser
+from seagull.utils import PluralFormatter
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -181,6 +182,21 @@ class SeagullObject:
         for subcls in cls.__subclasses__():
             yield from subcls.all_object_types()
             yield subcls
+
+    @classmethod
+    def printable_name(cls, count: int = 1) -> str:
+        """Convert the camelCase name of the class to a printable name.
+
+        :param count: Count value for pluralization.
+        """
+        name = "".join(
+            c if c.islower() else f" {c.lower()}" for c in cls.__name__
+        ).strip()
+        if name.endswith("y"):
+            return PluralFormatter().format(
+                f"{name[:-1]}{{count:plural,y,ies}}", count=count
+            )
+        return PluralFormatter().format(f"{name}{{count:plural,s}}", count=count)
 
     def update_intrasite_links(self, context: Context) -> None:
         """Refresh intra-site links.

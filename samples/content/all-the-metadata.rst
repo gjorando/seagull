@@ -2,7 +2,7 @@ Many metadata
 #############
 
 :title: This overrides the title
-:date: 2020-01-30
+:date: 2020-01-31
 :modified: 2022-03-20
 :tags: foo, bar, baz
 :category: My category

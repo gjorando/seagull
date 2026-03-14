@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}{{ sitename|striptags }} - {{ period | reverse | join(' ') }} archives{% endblock %}
+{% block title %}{{ sitename|striptags }} -
+    {% trans trimmed period=period | reverse | join(' ') %}{{ period }} archives{% endtrans %}{% endblock %}
 
 {% block content %}
-    <h2>Archives for {{ period | reverse | join(' ') }}</h2>
+    <h2>{% trans trimmed period=period | reverse | join(' ') %}Archives for {{ period }}{% endtrans %}</h2>
 
     <dl>
-        {% for article in dates %}
+        {% for article in articles %}
             <dt>{{ article.locale_date }}</dt>
             <dd><a href="{{ siteurl }}/{{ article.url }}">{{ article.title }}</a></dd>
         {% endfor %}

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-03-11 09:09-0400\n"
+"POT-Creation-Date: 2026-03-14 19:12-0400\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -60,7 +60,7 @@ msgstr ""
 msgid "Authors on %(sitename)s"
 msgstr ""
 
-#: templates/base.html:143
+#: templates/base.html:118
 #, python-format
 msgid "Proudly powered by <a rel=\"nofollow\" href=\"%(site_url)s\">Seagull</a>, which takes great advantage of <a rel=\"nofollow\" href=\"%(python_url)s\">Python</a>."
 msgstr ""
@@ -86,6 +86,16 @@ msgstr ""
 
 #: templates/index.html:4
 msgid "All articles"
+msgstr ""
+
+#: templates/period_archives.html:4
+#, python-format
+msgid "%(period)s archives"
+msgstr ""
+
+#: templates/period_archives.html:7
+#, python-format
+msgid "Archives for %(period)s"
 msgstr ""
 
 #: templates/tag.html:4

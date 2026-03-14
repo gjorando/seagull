@@ -22,8 +22,10 @@ LANGS = {
     }
 }
 
-INDEX_SAVE_AS = "articles.html"
-INDEX_LANG_SAVE_AS = "articles-{lang}.html"
+INDEX_URL = "posts/"
+INDEX_SAVE_AS = INDEX_URL + "index.html"
+INDEX_LANG_URL = "{lang}/posts/"
+INDEX_LANG_SAVE_AS = INDEX_LANG_URL + "index.html"
 
 # Feed generation is usually not desired when developing
 FEED_ALL_ATOM = None

@@ -1,8 +1,10 @@
+from dataclasses import dataclass
 from typing import ClassVar
 
 from seagull.contents.seagull_object import SeagullObject
 
 
+@dataclass
 class DirectTemplate(SeagullObject):
     """A direct template object."""
 
@@ -10,11 +12,6 @@ class DirectTemplate(SeagullObject):
         *SeagullObject.MANDATORY_FIELDS,
         "template",
     )
-
-    def __post_init__(self) -> None:
-        super().__post_init__()
-        # The title is always the name of the template
-        self.title = self.template
 
     def _field_setting_key(self, field_name: str) -> str:
         # Direct templates' setting keys are prefixed with the name of the template
@@ -28,3 +25,8 @@ class DirectTemplate(SeagullObject):
             if hasattr(self.settings, setting_key):
                 break
         return setting_key
+
+    @property
+    def _slug_source(self) -> str:
+        # The source for the slug is the name of the template
+        return self.template

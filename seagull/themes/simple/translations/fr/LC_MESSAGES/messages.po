@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-03-11 09:09-0400\n"
+"POT-Creation-Date: 2026-03-14 19:12-0400\n"
 "PO-Revision-Date: 2026-03-10 14:44-0400\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fr\n"
@@ -61,7 +61,7 @@ msgstr "Auteurs"
 msgid "Authors on %(sitename)s"
 msgstr "Auteurs sur %(sitename)s"
 
-#: templates/base.html:143
+#: templates/base.html:118
 #, python-format
 msgid "Proudly powered by <a rel=\"nofollow\" href=\"%(site_url)s\">Seagull</a>, which takes great advantage of <a rel=\"nofollow\" href=\"%(python_url)s\">Python</a>."
 msgstr "Fièrement propulsé par <a rel=\"nofollow\" href=\"%(site_url)s\">Seagull</a>, qui tire profit de <a rel=\"nofollow\" href=\"%(python_url)s\">Python</a>."
@@ -88,6 +88,16 @@ msgstr "Articles dans la catégorie %(category_name)s"
 #: templates/index.html:4
 msgid "All articles"
 msgstr "Tous les articles"
+
+#: templates/period_archives.html:4
+#, python-format
+msgid "%(period)s archives"
+msgstr "Archives de %(period)s"
+
+#: templates/period_archives.html:7
+#, fuzzy, python-format
+msgid "Archives for %(period)s"
+msgstr "Archives de %(period)s"
 
 #: templates/tag.html:4
 #, fuzzy, python-format

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
 from seagull.contents.seagull_object import SeagullObject
+from seagull.utils import PluralFormatter
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -22,6 +23,10 @@ class Static(SeagullObject):
         # This is a no-op for static files: static files don't have rendered content
         # that needs to be updated
         pass
+
+    @classmethod
+    def printable_name(cls, count: int = 1) -> str:
+        return PluralFormatter().format("static file{count:plural,s}", count=count)
 
     @property
     def _save_as(self) -> Path:

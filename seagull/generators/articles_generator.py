@@ -13,8 +13,6 @@ class ArticlesGenerator[T: Article](Generator):
 
     content_class: type[T] = Article
 
-    # TODO archives
-
     @property
     def base_path(self) -> Path:
         return self.settings.path
