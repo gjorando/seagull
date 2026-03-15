@@ -1,15 +1,15 @@
-{% if DEFAULT_PAGINATION %}
-    {% set first_page = articles_paginator.page(1) %}
-    {% set last_page = articles_paginator.page(articles_paginator.num_pages) %}
+{% if default_pagination %}
+    {% set first_page = articles_paginator[0] %}
+    {% set last_page = articles_paginator[-1] %}
     <nav>
         <ul>
-            {% if articles_page.has_previous() %}
+            {% if articles_page.previous_page is not none %}
                 <li><a href="{{ siteurl }}/{{ first_page.url }}">&Lang;</a></li>
-                <li><a href="{{ siteurl }}/{{ articles_previous_page.url }}">&lang;</a></li>
+                <li><a href="{{ siteurl }}/{{ articles_page.previous_page.url }}">&lang;</a></li>
             {% endif %}
-            <li>Page {{ articles_page.number }} / {{ articles_paginator.num_pages }}</li>
-            {% if articles_page.has_next() %}
-                <li><a href="{{ siteurl }}/{{ articles_next_page.url }}">&rang;</a></li>
+            <li>Page {{ articles_page.number }} / {{ articles_paginator|length }}</li>
+            {% if articles_page.next_page is not none %}
+                <li><a href="{{ siteurl }}/{{ articles_page.next_page.url }}">&rang;</a></li>
                 <li><a href="{{ siteurl }}/{{ last_page.url }}">&Rang;</a></li>
             {% endif %}
         </ul>

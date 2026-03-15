@@ -1,6 +1,6 @@
 AUTHOR = "John Doe"
 SITENAME = "Test website"
-SITEURL = "https://getseagull.com"
+SITEURL = "http://localhost:8000"
 
 PATH = "content"
 

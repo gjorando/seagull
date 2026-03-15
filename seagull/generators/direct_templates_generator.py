@@ -27,7 +27,6 @@ class DirectTemplatesGenerator[T: DirectTemplate](Generator):
         """
         existing_save_as = [o.save_as for o in self.context]
         all_content = []
-        # TODO pagination
         for template_name, template_lang in product(
             self.settings.direct_templates,
             (self.settings.default_lang, *self.settings.langs.keys()),

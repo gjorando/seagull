@@ -8,6 +8,7 @@ from seagull.log import logger
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from typing import Any
 
     from seagull.contents import SeagullObject
     from seagull.context import Context
@@ -68,15 +69,34 @@ class Writer(ABC):
         return writer_class
 
     @abstractmethod
-    def _parse_data(self, obj: SeagullObject, context: Context) -> str | Path:
+    def _parse_data(
+        self, obj: SeagullObject, context: Context
+    ) -> dict[Path, str | Path]:
         """Parsing procedure for the writer.
+
+        This method can return multiple destinations, which is useful for paginated
+        templates.
 
         :param obj: Seagull object.
         :param context: Shared context.
-        :return: Parsed content string, ready to be written in a file, or a `Path`
-        object pointing to a file that will be copied to the `save_as` value of the
+        :return: A dictionary of paths, mapped to a content string ready to be written
+        to the path, or a Path pointing to a file that will be copied directly.
+        """
+
+    @staticmethod
+    def _get_jinja_context(obj: SeagullObject, context: Context) -> dict[str, Any]:
+        """Create the render context for the object.
+
+        This may be called by `self._parse_data` to get the full render context of an
         object.
         """
+        # We merge the settings, the base render context, and that of the object, to
+        # create the full render context
+        return (
+            obj.settings.as_dict()
+            | context.base_jinja_context(obj.lang)
+            | obj.jinja_context
+        )
 
     def write_file[T: SeagullObject](self, obj: T, context: Context) -> None:
         """Parse a seagull object to write a file.
@@ -86,36 +106,35 @@ class Writer(ABC):
         :param obj: Seagull object to parse.
         :param context: Shared context.
         """
-        output_path = self.settings.output_path / obj.save_as
-        log_output_path = output_path.relative_to(self.settings.output_path.parent)
-        logger.debug(f"Writing '{log_output_path}'.")
-
-        # Write the file
-        try:
-            # mkdir -p the output directory if required
-            if not output_path.parent.exists():
-                output_path.parent.mkdir(parents=True)
-            # If the output path is a directory, delete it first
-            elif output_path.is_dir():
-                output_path.unlink()
-            elif output_path.is_file():
-                logger.warning(f"Overriding {log_output_path}.")
-            # Parse the data and save it
-            match self._parse_data(obj, context):
-                # If _parse_data returns a path, we copy this file to the output
-                case Path() as source_path:
-                    if source_path.is_dir():
-                        # If the output path is an existing file, delete it first
-                        if output_path.is_file():
-                            output_path.unlink(missing_ok=True)
-                        shutil.copytree(source_path, output_path, dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(source_path, output_path)
-                # Otherwise, we write the parsed data to the output
-                case str(output_data):
-                    output_path.write_text(output_data)
-        except OSError:
-            logger.exception(
-                f"Failed to create '{log_output_path}'.",
-                exc_info=logger.level == logging.DEBUG,
-            )
+        # Parse the data and save it
+        for dest_path, content in self._parse_data(obj, context).items():
+            log_dest_path = dest_path.relative_to(self.settings.output_path.parent)
+            logger.debug(f"Writing '{log_dest_path}'.")
+            try:
+                # mkdir -p the output directory if required
+                if not dest_path.parent.exists():
+                    dest_path.parent.mkdir(parents=True)
+                # If the output path is a directory, delete it first
+                elif dest_path.is_dir():
+                    dest_path.unlink()
+                elif dest_path.is_file():
+                    logger.warning(f"Overriding {log_dest_path}.")
+                # For every returned parsed content...
+                match content:
+                    # If we have a path, we copy this file to the output
+                    case Path() as source_path:
+                        if source_path.is_dir():
+                            # If the output path is an existing file, delete it first
+                            if dest_path.is_file():
+                                dest_path.unlink(missing_ok=True)
+                            shutil.copytree(source_path, dest_path, dirs_exist_ok=True)
+                        else:
+                            shutil.copy2(source_path, dest_path)
+                    # Otherwise, we write the parsed data to the output
+                    case str(output_data):
+                        dest_path.write_text(output_data)
+            except OSError:
+                logger.exception(
+                    f"Failed to create '{log_dest_path}'.",
+                    exc_info=logger.level == logging.DEBUG,
+                )

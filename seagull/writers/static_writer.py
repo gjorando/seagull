@@ -14,6 +14,10 @@ class StaticWriter(Writer):
 
     file_extensions: ClassVar[list[str | None]] = [None]
 
-    def _parse_data(self, obj: SeagullObject, _: Context) -> Path:
+    def _parse_data(self, obj: SeagullObject, context: Context) -> dict[Path, Path]:
+        del context  # Unused argument
         # StaticWriter simply instructs write_file to copy the source file to the output
-        return self.settings.path / obj.source_path
+        return {
+            self.settings.output_path / obj.save_as: self.settings.path
+            / obj.source_path
+        }

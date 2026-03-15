@@ -4,12 +4,12 @@ from contextlib import contextmanager
 from importlib.util import find_spec
 from pathlib import Path
 from string import Formatter
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, NamedTuple, Protocol
 
 from seagull.log import logger
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator
+    from collections.abc import Callable, Generator, Sized
     from datetime import datetime
 
     from seagull.contents import SeagullObject
@@ -20,6 +20,14 @@ class Comparable[T](Protocol):
 
     @abstractmethod
     def __lt__(self: T, other: T, /) -> bool: ...
+
+
+class PaginationRule(NamedTuple):
+    """Pagination rule for the paginator."""
+
+    min_page: int
+    url: str
+    save_as: str
 
 
 def get_installed_themes_path() -> Path | None:
@@ -156,7 +164,7 @@ class PluralFormatter(Formatter):
     Based on https://tobywf.com/2015/12/sane-pluralisation/.
     """
 
-    def format_field(self, value: object, format_spec: str) -> str:
+    def format_field(self, value: int | Sized, format_spec: str) -> str:
         if format_spec.startswith("plural,"):
             replacement_specs = format_spec.split(",")[1:]
             replacement_values = [""] * 3

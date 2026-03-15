@@ -25,12 +25,13 @@ TO-DO
 - [ ] Update a bunch of development files like `CONTRIBUTING.rst`.
 - [ ] Better handling of generated taxonomies.
 - [ ] Better handling of localized settings.
-- [ ] Hidden categories.
+- [ ] Hidden taxonomies.
 - [X] reStructuredText's `abbr` tag.
 - [ ] RSS and Atom feeds.
 - [X] Granular archives.
+- [ ] Improve type annotations (for instance, replace `list` with `Sequence`, `dict` with `Mapping`, etc.).
 - [ ] Handling of sorting in the archives: Right now I am enforcing the reverse chronological order in the granular archives, while the general archives keep the article sorting defined in the settings (by virtue of the general archives being a direct template). I think I should unify archives and granular archives (general archives have a "null" granularity), and add a setting for the sorting of archives.
-- [ ] Pagination
+- [X] Pagination
 - [ ] Documentation.
 - [ ] Clarify the canonical order of arguments in the public API. Lessen the use of the whole `Settings` object in argument lists, instead passing the setting value(s) we need directly.
 - [ ] Pygments.

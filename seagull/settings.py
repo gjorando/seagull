@@ -8,6 +8,7 @@ from importlib.util import module_from_spec, spec_from_file_location
 from inspect import getmembers
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from itertools import batched, permutations, product
+from operator import attrgetter
 from pathlib import Path
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -17,6 +18,7 @@ from jinja2 import ChoiceLoader, Environment, FileSystemLoader, PrefixLoader
 from seagull.decorators import extra_dataclass
 from seagull.log import logger
 from seagull.utils import (
+    PaginationRule,
     absolute_from_base_path,
     ensure_paths,
     get_installed_themes_path,
@@ -150,7 +152,7 @@ class Settings:
     tags_save_as: Path | None = Path("tags/index.html")
     tags_lang_url: str = "{lang}/tags/"
     tags_lang_save_as: Path | None = Path("{lang}/tags/index.html")
-    index_url: str = "/"
+    index_url: str = "."
     index_save_as: Path | None = Path("index.html")
     index_lang_url: str = "{lang}/"
     index_lang_save_as: Path | None = Path("{lang}/index.html")
@@ -190,6 +192,25 @@ class Settings:
     filename_metadata: str = r"(?P<date>\d{4}-\d{2}-\d{2}).*"
     path_metadata: str = ""
     extra_path_metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    # Pagination
+    default_orphans: int = 0
+    default_pagination: int = 0
+    paginated_templates: dict[str, int | None] = field(
+        default_factory=lambda: {
+            "index": None,
+            "tag": None,
+            "category": None,
+            "author": None,
+        }
+    )
+    pagination_patterns: list[PaginationRule] = field(
+        default_factory=lambda: [
+            (-1, "{base_name}/page/last/", "{base_name}/page/last/index.html"),
+            (1, "{url}", "{save_as}"),
+            (2, "{base_name}/page/{number}/", "{base_name}/page/{number}/index.html"),
+        ]
+    )
 
     # Translations
     default_lang: str = "en"
@@ -249,12 +270,19 @@ class Settings:
             module_name, cls_name = self.seagull_class.rsplit(".", 1)
             module = import_module(module_name)
             self.seagull_class = getattr(module, cls_name)
+        # FIXME very not practical with absolute URLs
         # Add the trailing slash if missing (important for link joining)
         if not self.siteurl.endswith("/"):
             self.siteurl = f"{self.siteurl}/"
         # Parse the IP address in bind
         if not isinstance(self.bind, (IPv4Address, IPv6Address)):
             self.bind = ip_address(self.bind)
+        # Convert our pagination rules to the named tuple type,
+        # and ensure they're sorted
+        self.pagination_patterns = sorted(
+            [PaginationRule(*pr) for pr in self.pagination_patterns],
+            key=attrgetter("min_page"),
+        )
 
         # Article, taxonomy and page paths are mutually exclusive
         self._mutually_exclude_sources("article", "page", "author", "category", "tag")

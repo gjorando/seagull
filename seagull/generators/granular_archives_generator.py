@@ -38,7 +38,6 @@ class GranularArchivesGenerator[T: GranularArchive](DirectTemplatesGenerator):
 
     def _create_objects(self) -> list[T]:
         all_content = []
-        # TODO pagination
         archive_granularity: ArchiveGranularity
         for archive_granularity, archive_lang in product(
             ArchiveGranularity,
