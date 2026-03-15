@@ -19,20 +19,23 @@ Okay, but seagulls are really cool birds.
 TO-DO
 -----
 
+- [ ] `dates` context attribute(s).
 - [ ] Update a bunch of development files like `CONTRIBUTING.rst`.
 - [ ] Better handling of generated taxonomies.
 - [ ] Hidden categories.
 - [ ] reStructuredText's `abbr` tag.
 - [ ] RSS and Atom feeds.
 - [X] Granular archives.
+- [ ] Handling of sorting in the archives: Right now I am enforcing the reverse chronological order in the granular archives, while the general archives keep the article sorting defined in the settings (by virtue of the general archives being a direct template). I think I should unify archives and granular archives (general archives have a "null" granularity), and add a setting for the sorting of archives.
 - [ ] Pagination
 - [ ] Documentation.
+- [ ] Clarify the canonical order of arguments in the public API. Lessen the use of the whole `Settings` object in argument lists, instead passing the setting value(s) we need directly.
 - [ ] Pygments.
 - [ ] Rich logger.
 - [ ] A testing suite.
 - [ ] Markdown and HTML readers.
 - [ ] Signals and plug-ins.
-- [ ] What to do with content that doesn't exist in one language, option to disable subsites.
+- [ ] What to do with content that doesn't exist in one language.
 - [ ] `import`, `quickstart` and `themes` tools.
 - [ ] A tool to convert a Pelican project to a Seagull one?
 - [ ] A shim for compatibility with existing Pelican plugins?

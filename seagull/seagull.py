@@ -3,7 +3,8 @@ import shutil
 from functools import partial
 from typing import TYPE_CHECKING
 
-from seagull.contents import Author, Category, Tag
+from seagull.contents import Author, Category, Content, Tag, Taxonomy
+from seagull.contents.content import ContentStatus
 from seagull.context import Context
 from seagull.generators import (
     ArticlesGenerator,
@@ -14,12 +15,13 @@ from seagull.generators import (
     TaxonomyGenerator,
 )
 from seagull.log import error_with_paths, logger
-from seagull.utils import PluralFormatter
+from seagull.utils import Comparable, PluralFormatter
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from seagull.contents import SeagullObject
     from seagull.generators import Generator
     from seagull.settings import Settings
 
@@ -32,20 +34,7 @@ class Seagull:
         :param settings: Seagull settings.
         """
         self.settings: Settings = settings
-        self.generator_classes: list[type[Generator]] = [
-            # Taxonomy generators must always come before content generators
-            partial(TaxonomyGenerator, content_class=Category),
-            partial(TaxonomyGenerator, content_class=Author),
-            partial(TaxonomyGenerator, content_class=Tag),
-            ArticlesGenerator,
-            PagesGenerator,
-            # DirectTemplatesGenerator must always come after content generators
-            DirectTemplatesGenerator,
-            GranularArchivesGenerator,
-            # StaticGenerator must always come last
-            StaticGenerator,
-            partial(StaticGenerator, theme_static=True),
-        ]
+        self.context: Context = Context()
 
     def _clear_output_dir(self, *, dry_run: bool = False) -> None:
         """Delete the output directory according to the retention policy.
@@ -107,11 +96,9 @@ class Seagull:
 
     def run(self) -> None:
         """Main generation sequence."""
-        # Create a new shared context
-        context = Context()
         # Instantiate the generators
         generators: list[Generator] = [
-            gcls(self.settings, context) for gcls in self.generator_classes
+            gcls(self.settings, self.context) for gcls in self.generator_classes
         ]
 
         # Don't attempt clearing the output directory if it contains the content dir
@@ -127,48 +114,92 @@ class Seagull:
         for g in generators:
             g.generate_context()
 
+        # Prune the context from empty taxa
+        self.context.prune_taxonomies()
+
         # Then, we link the translations together
         for g in generators:
             g.link_translations()
 
-        # FIXME Doesn't work with lists already in taxonomies and period archives
-        # Then, we sort every list of seagull objects
-        for object_class, object_list in context.objects.items():
-            # Get the setting for the type of object
-            order_by_setting_key = f"{object_class.__name__.lower()}_order_by"
-            sort_key, reverse = getattr(
-                self.settings, order_by_setting_key, (None, False)
-            )
-            # If a setting for this type exists, do the sorting
-            if sort_key:
-                object_list.sort(key=sort_key, reverse=reverse)
+        # We sort the objects
+        self._sort_context()
 
         # We update intrasite links for all objects
-        for obj in context:
-            obj.update_intrasite_links(context)
+        for obj in self.context:
+            obj.update_intrasite_links(self.context)
 
         # Now, we can write the output to disk
         for g in generators:
             g.generate_output()
 
-        self._run_stats(context)
+        self._run_stats()
 
-    @staticmethod
-    def _run_stats(context: Context) -> None:
+    def _sort_context(self) -> None:
+        """Sort the objects in the context according to the `*_order_by` settings."""
+        # Then, we sort every list of seagull objects
+        for obj_class, objs in self.context.objects.items():
+            # Get the setting for the type of object
+            order_by_setting_key = f"{obj_class.__name__.lower()}_order_by"
+            sort_key: Callable[[SeagullObject], Comparable]
+            sort_key, reverse = getattr(
+                self.settings, order_by_setting_key, (None, False)
+            )
+            # If a setting for this type exists, do the sorting
+            if sort_key:
+                self.context.sort_objects(obj_class, key=sort_key, reverse=reverse)
+
+            # We sort the list of articles in taxonomies
+            # FIXME better handling of sorting the sub-objects of individual objects
+            if issubclass(obj_class, Taxonomy):
+                obj: Taxonomy
+                for obj in objs:
+                    sort_key, reverse = self.settings.article_order_by
+                    obj.articles.sort(key=sort_key, reverse=reverse)
+
+    def _run_stats(self) -> None:
         """Display some stats about a run."""
         # Number of generated objects, per type
-        for object_class, objs in context.objects.items():
+        for object_class, objs in self.context.objects.items():
+            # For content objects, log by status
+            if issubclass(object_class, Content):
+                for status in ContentStatus:
+                    if num_status := len(
+                        list(filter(lambda c: c.status == status, objs))
+                    ):
+                        logger.info(
+                            f"Processed {num_status} {status} "
+                            f"{object_class.printable_name(num_status)}."
+                        )
+                continue
             logger.info(
                 f"Processed {len(objs)} {object_class.printable_name(len(objs))}."
             )
         # Log failed source paths
-        if context.failed_source_paths:
+        if self.context.failed_source_paths:
             error_with_paths(
                 PluralFormatter().format(
                     "There {paths:plural,is,are} {len_paths} "
                     "failed file{paths:plural,s}.",
-                    paths=context.failed_source_paths,
-                    len_paths=len(context.failed_source_paths),
+                    paths=self.context.failed_source_paths,
+                    len_paths=len(self.context.failed_source_paths),
                 ),
-                paths=context.failed_source_paths,
+                paths=self.context.failed_source_paths,
             )
+
+    @property
+    def generator_classes(self) -> list[type[Generator]]:
+        """Get the list of generator classes to run."""
+        return [
+            # Taxonomy generators must always come before content generators
+            partial(TaxonomyGenerator, content_class=Category),
+            partial(TaxonomyGenerator, content_class=Author),
+            partial(TaxonomyGenerator, content_class=Tag),
+            ArticlesGenerator,
+            PagesGenerator,
+            # DirectTemplatesGenerator must always come after content generators
+            DirectTemplatesGenerator,
+            GranularArchivesGenerator,
+            # StaticGenerator must always come last
+            StaticGenerator,
+            partial(StaticGenerator, theme_static=True),
+        ]

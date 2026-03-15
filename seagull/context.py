@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator
     from pathlib import Path
 
+    from seagull.utils import Comparable
+
 
 class SeagullObjectContextDescriptor[T: Context, C: SeagullObject]:
     """Descriptor for lists of seagull objects in the context.
@@ -51,6 +53,7 @@ class SeagullObjectContextDescriptor[T: Context, C: SeagullObject]:
         return instance.objects[self.obj_class]
 
 
+# TODO remove a lot of unused properties, maybe refactor based on the fact that the lang is now central to accessing data
 class Context(Collection[SeagullObject]):
     """Shared context for a seagull run."""
 
@@ -66,13 +69,33 @@ class Context(Collection[SeagullObject]):
         self.static_links: set[Path] = set()
         self.failed_source_paths: set[Path] = set()
 
+    def sort_objects[T: SeagullObject](
+        self,
+        obj_class: type[T],
+        key: Callable[[T], Comparable],
+        *,
+        reverse: bool = False,
+    ) -> None:
+        """Sort a specific list of objects.
+
+        :param obj_class: The type of seagull object to sort.
+        :param key: The sorting function.
+        :param reverse: If `True`, the sorting is reversed.
+        :raise ValueError: If `obj_class` is not a subclass of `SeagullObject`.
+        """
+        if not issubclass(obj_class, SeagullObject):
+            raise ValueError(obj_class)
+        self.objects[obj_class].sort(key=key, reverse=reverse)
+
     def filter_objects[T: SeagullObject](
-        self, function: Callable[[T], bool] | None, obj_class: type[T]
+        self,
+        obj_class: type[T],
+        function: Callable[[T], bool],
     ) -> Iterable[T]:
         """Filter a specific list of objects.
 
-        :param function: The filtering function.
         :param obj_class: The type of seagull object to filter.
+        :param function: The filtering function.
         :return: The filtered list of objects.
         :raise ValueError: If `obj_class` is not a subclass of `SeagullObject`.
         """
@@ -94,7 +117,14 @@ class Context(Collection[SeagullObject]):
         def filter_func(obj: Content) -> bool:
             return obj.status == status
 
-        return self.filter_objects(filter_func, content_class)
+        return self.filter_objects(content_class, filter_func)
+
+    def prune_taxonomies(self) -> None:
+        """Remove empty taxa."""
+        for taxon_class in self.taxonomies:
+            self.objects[taxon_class] = list(
+                filter(lambda t: t.articles, self.objects[taxon_class])
+            )
 
     def get_or_new_taxon[T: Taxonomy](
         self,
@@ -209,12 +239,13 @@ class Context(Collection[SeagullObject]):
         :param lang: If set, only returns context relevant for this lang.
         """
 
-        def lang_filter(obj: SeagullObject) -> bool:
-            return obj.lang == lang
+        def lang_filter(o: SeagullObject) -> bool:
+            return o.lang == lang
 
+        # FIXME maybe use a property for this instead?
         period_archives = defaultdict(list)
         obj: GranularArchive
-        for obj in self.filter_objects(lang_filter, GranularArchive):
+        for obj in self.filter_objects(GranularArchive, lang_filter):
             period_archives[obj.granularity.value].append(obj)
 
         all_articles = list(filter(lang_filter, self.published_articles))

@@ -198,13 +198,13 @@ class Settings:
 
     # Ordering content
     # TODO allow for sorting by more than one function (eg. sort by date, then by name)
-    article_order_by: str | Callable[[Article], tuple[Comparable, bool]] = (
+    article_order_by: str | tuple[Callable[[Article], Comparable], bool] = (
         "reversed-date"
     )
-    page_order_by: str | Callable[[Page], tuple[Comparable, bool]] = "basename"
-    author_order_by: str | Callable[[Author], tuple[Comparable, bool]] = "name"
-    category_order_by: str | Callable[[Category], tuple[Comparable, bool]] = "name"
-    tag_order_by: str | Callable[[Tag], tuple[Comparable, bool]] = "name"
+    page_order_by: str | tuple[Callable[[Page], Comparable], bool] = "basename"
+    author_order_by: str | tuple[Callable[[Author], Comparable], bool] = "name"
+    category_order_by: str | tuple[Callable[[Category], Comparable], bool] = "name"
+    tag_order_by: str | tuple[Callable[[Tag], Comparable], bool] = "name"
 
     # Themes
     theme: Path | str = "simple"

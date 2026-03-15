@@ -23,9 +23,9 @@ class TaxonomyGenerator[T: Taxonomy](Generator):
 
     def link_translations(self) -> None:
         # Before linking translations, we need to update the generated content with
-        # taxonomies that were created by the article generator, and that are not empty
+        # taxonomies that were created by the articles generator
         for obj in self.context.taxonomies[self.content_class]:
-            if obj not in self.all_content and obj.articles:
+            if obj not in self.all_content:
                 self.all_content.append(obj)
         super().link_translations()
 

@@ -90,9 +90,9 @@ def temporary_locale(
         locale.setlocale(lcc, orig_locales[lcc])
 
 
-def order_by_factory[T: Comparable](
+def order_by_factory(
     value: str,
-) -> tuple[Callable[[SeagullObject], T], bool]:
+) -> tuple[Callable[[SeagullObject], Comparable], bool]:
     """Convert an `*_ORDER_BY` setting to a key function and `reverse` parameter.
 
     See [the Python documentation](https://docs.python.org/3/howto/sorting.html)
@@ -109,7 +109,7 @@ def order_by_factory[T: Comparable](
     # Special case basename: order by filename
     if value == "basename":
 
-        def key_func(obj: SeagullObject) -> T:
+        def key_func(obj: SeagullObject) -> Comparable:
             if obj.source_path:
                 return obj.source_path.name
             return obj.title
