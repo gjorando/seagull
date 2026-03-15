@@ -1,3 +1,4 @@
+import re
 from io import StringIO
 from itertools import chain
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -6,6 +7,8 @@ import docutils
 import docutils.core
 import docutils.io
 import docutils.readers
+from docutils import nodes, utils
+from docutils.parsers.rst import roles
 from docutils.parsers.rst.languages import get_language
 from docutils.writers.html5_polyglot import HTMLTranslator
 from docutils.writers.html5_polyglot import Writer as HTMLWriter
@@ -14,14 +17,40 @@ from seagull.log import logger
 from seagull.readers.reader import Reader
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
     from pathlib import Path
 
     from docutils.nodes import abbreviation as docutils_abbr
     from docutils.nodes import document as docutils_document
     from docutils.nodes import field_body
     from docutils.nodes import image as docutils_image
+    from docutils.parsers.rst.states import Inliner
 
     from seagull import Settings
+
+
+# Compiled abbreviation regex for the :abbr: role
+_ABBR_REGEX = re.compile(r"\((.*)\)$", re.DOTALL)
+
+
+def abbr_role(  # noqa: PLR0913
+    typ: str,
+    rawtext: str,
+    text: str,
+    lineno: int,
+    inliner: Inliner,
+    options: Mapping[str, Any] | None = None,
+    content: Sequence[str] | None = None,
+) -> tuple[list, list]:
+    """Custom docutils role for abbreviations."""
+    del typ, rawtext, lineno, inliner, options, content  # Unused arguments
+    text = utils.unescape(text)
+    m = _ABBR_REGEX.search(text)
+    if m is None:
+        return [nodes.abbreviation(text, text)], []
+    abbr = text[: m.start()].strip()
+    expl = m.group(1)
+    return [nodes.abbreviation(abbr, abbr, explanation=expl)], []
 
 
 class SeagullHTMLTranslator(HTMLTranslator):
@@ -60,12 +89,14 @@ class FormattedFieldTranslator(SeagullHTMLTranslator):
 class RstReader(Reader):
     """reStructuredText reader class."""
 
-    enabled = bool(docutils)
+    enabled: ClassVar[bool] = bool(docutils)
     file_extensions: ClassVar[list[str | None]] = ["rst"]
+    _docutils_initialized: bool = False
 
     def __init__(self, settings: Settings):
         super().__init__(settings)
 
+        # FIXME currently we have now way of changing that depending on the lang metadata of a file we would parse
         lang_code = self.settings.default_lang
         if not get_language(lang_code):
             logger.warning(
@@ -74,6 +105,20 @@ class RstReader(Reader):
             )
             lang_code = "en"
         self._language_code = lang_code
+
+        # Initialize docutils if needed
+        if not self._docutils_initialized:
+            self._docutils_init()
+
+    @classmethod
+    def _docutils_init(cls) -> None:
+        """Initialize docutils.
+
+        This will only run once on the first instantiation of `RstReader`, registering
+        custom roles and directives.
+        """
+        roles.register_local_role("abbr", abbr_role)
+        cls._docutils_initialized = True
 
     def _parse_metadata(self, data: docutils_document, path: Path) -> dict[str, Any]:
         """Parse metadata from the parsed data.

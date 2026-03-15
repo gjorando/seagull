@@ -28,4 +28,4 @@ Yet another paragraph.
 A subtitle
 ==========
 
-Damn that's a long one.
+Damn that's a long one. An abbreviation: :abbr:`ADHD (Attention Deficit Hyperactivity Disorder)`.

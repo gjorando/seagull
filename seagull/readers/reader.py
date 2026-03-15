@@ -21,7 +21,7 @@ class Reader(ABC):
 
     A `Reader` object creates seagull objects from a file."""
 
-    enabled: bool = True
+    enabled: ClassVar[bool] = True
     file_extensions: ClassVar[list[str | None]] = []
 
     def __init__(self, settings: Settings):

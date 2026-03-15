@@ -20,10 +20,13 @@ TO-DO
 -----
 
 - [ ] `dates` context attribute(s).
+- [ ] The handling of exceptions with multi-threading (when using the HTTP server) is broken for now.
+- [ ] In autoreload, do not crash completely upon an exception.
 - [ ] Update a bunch of development files like `CONTRIBUTING.rst`.
 - [ ] Better handling of generated taxonomies.
+- [ ] Better handling of localized settings.
 - [ ] Hidden categories.
-- [ ] reStructuredText's `abbr` tag.
+- [X] reStructuredText's `abbr` tag.
 - [ ] RSS and Atom feeds.
 - [X] Granular archives.
 - [ ] Handling of sorting in the archives: Right now I am enforcing the reverse chronological order in the granular archives, while the general archives keep the article sorting defined in the settings (by virtue of the general archives being a direct template). I think I should unify archives and granular archives (general archives have a "null" granularity), and add a setting for the sorting of archives.
