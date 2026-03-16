@@ -5,7 +5,7 @@ from shutil import which
 from invoke import task
 from livereload import Server
 
-PKG_NAME = "pelican"
+PKG_NAME = "seagull"
 PKG_PATH = Path(PKG_NAME)
 DOCS_PORT = int(os.environ.get("DOCS_PORT", "8000"))
 BIN_DIR = "bin" if os.name != "nt" else "Scripts"
@@ -47,7 +47,7 @@ def tests(c):
 def coverage(c):
     """Generate code coverage of running the test suite."""
     c.run(
-        f"{VENV_BIN}/pytest --cov=pelican --cov-report term-missing "
+        f"{VENV_BIN}/pytest --cov=seagull --cov-report term-missing "
         "--cov-fail-under 75",
         pty=PTY,
     )

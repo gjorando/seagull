@@ -215,7 +215,7 @@ def serve(settings_path: Path, **overrides: dict) -> None:
     "-s",
     "settings_path",
     type=clickx.path(exists=True, dir_okay=False),
-    default="pelicanconf.py",
+    default="seagullconf.py",
     help="The settings of the application.",
 )
 # Non-settings related options go after the --settings/-s option

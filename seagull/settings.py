@@ -276,6 +276,7 @@ class Settings:
     _jinja_env_object: Environment | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
+        logger.warning(f"{self.output_path}, {Path.cwd()}")
         """Parse and normalize various settings."""
         # Coalesce these relative paths to absolute paths relative to _working_dir,
         # which is usually the directory where the settings module is
@@ -629,7 +630,6 @@ class Settings:
         # Keep track of the overrides
         context["_overrides"] = context_overrides | extra_overrides
         # Set the working directory to the settings module directory
-        # FIXME if we call seagull from another path than the settings file directory, the cli overrides break; we then need to rewrite those overrides before passing them to from_module
         os.chdir(context["_settings_path"].parent)
         return cls(**context)
 

@@ -11,7 +11,7 @@
         {% block head %}
             <title>{% block title %}{{ sitename|striptags }}{% endblock title %}</title>
             <meta charset="utf-8"/>
-            <meta name="generator" content="Pelican"/>
+            <meta name="generator" content="Seagull"/>
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             {% if sitesubtitle %}
                 <meta name="description" content="{{ sitesubtitle }}"/>
@@ -46,11 +46,13 @@
 
 
 
+
                             {% if category_feed_atom_url %}{{ category_feed_atom_url.format(slug=category.slug) }}{% else %}{{ category_feed_atom.format(slug=category.slug) }}{% endif %}"
                       type="application/atom+xml" rel="alternate" title="{{ sitename|striptags }} Categories Atom Feed"/>
             {% endif %}
             {% if category_feed_rss and category %}
                 <link href="{{ feed_domain }}/
+
 
 
 
@@ -64,11 +66,13 @@
 
 
 
+
                             {% if tag_feed_atom_url %}{{ tag_feed_atom_url.format(slug=tag.slug) }}{% else %}{{ tag_feed_atom.format(slug=tag.slug) }}{% endif %}"
                       type="application/atom+xml" rel="alternate" title="{{ sitename|striptags }} Tags Atom Feed"/>
             {% endif %}
             {% if tag_feed_rss and tag %}
                 <link href="{{ feed_domain }}/
+
 
 
 

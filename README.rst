@@ -1,6 +1,8 @@
 [WIP]Seagull
 ============
 
+**THIS IS CURRENTLY A VERY UNSTABLE AND EXPERIMENTAL WORK. USE AT YOUR OWN RISK.**
+
 Seagull is a static site generator written in Python_. It started off as a fork of Pelican_, a very popular static site generator. At first, I wanted to integrate the functionalities of the `I18N Subsites`_, a plugin for Pelican that creates internationalized sub-sites for the default site. I soon realized that Pelican codebase wouldn't allow me to do that easily, and that the *obvious* solution was to rewrite it from scratch.
 
 I wanted to keep the re-implementation as compatible as possible with Pelican, but I ended up changing quite a lot of stuff, which means that Seagull is not a drop in replacement in an existing Pelican project.
@@ -27,7 +29,7 @@ TO-DO
 - [ ] Better handling of localized settings.
 - [ ] Hidden taxonomies.
 - [X] reStructuredText's `abbr` tag.
-- [ ] RSS and Atom feeds.
+- [X] RSS and Atom feeds.
 - [X] Granular archives.
 - [ ] Improve type annotations (for instance, replace `list` with `Sequence`, `dict` with `Mapping`, etc.).
 - [ ] Handling of sorting in the archives: Right now I am enforcing the reverse chronological order in the granular archives, while the general archives keep the article sorting defined in the settings (by virtue of the general archives being a direct template). I think I should unify archives and granular archives (general archives have a "null" granularity), and add a setting for the sorting of archives.
@@ -40,6 +42,9 @@ TO-DO
 - [ ] A testing suite.
 - [ ] Markdown and HTML readers.
 - [ ] Signals and plug-ins.
+- [ ] Remake github config, readthedocs config.
+- [ ] Publish on Pypi?
+- [ ] Deps in tox.ini
 - [ ] What to do with content that doesn't exist in one language.
 - [ ] `import`, `quickstart` and `themes` tools.
 - [ ] A tool to convert a Pelican project to a Seagull one?
