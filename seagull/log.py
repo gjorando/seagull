@@ -8,7 +8,6 @@ if TYPE_CHECKING:
     from logging import Logger
     from pathlib import Path
 
-# TODO use rich handler instead
 logger: Logger = new_extra_logger(
     name="seagull", format="{asctime} {levelname} | {message}", datefmt="[%H:%M:%S]"
 )

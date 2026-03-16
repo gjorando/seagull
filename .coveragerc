@@ -1,4 +1,4 @@
 [report]
 omit =
-       pelican/tests/*
-       pelican/signals.py
+       seagull/tests/*
+       seagull/signals.py

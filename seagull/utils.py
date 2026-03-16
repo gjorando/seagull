@@ -51,7 +51,6 @@ def get_installed_themes_path() -> Path | None:
 
 def ensure_paths(p: Path | str | list[Path | str]) -> Path | list[Path]:
     """Ensure a path-like or list of path-like uses `pathlib.Path`."""
-    # TODO accept more sequence types
     if isinstance(p, list):
         return [Path(v) for v in p]
     return Path(p)

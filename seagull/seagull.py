@@ -9,6 +9,7 @@ from seagull.context import Context
 from seagull.generators import (
     ArticlesGenerator,
     DirectTemplatesGenerator,
+    FeedGenerator,
     GranularArchivesGenerator,
     PagesGenerator,
     StaticGenerator,
@@ -194,8 +195,11 @@ class Seagull:
             partial(TaxonomyGenerator, content_class=Category),
             partial(TaxonomyGenerator, content_class=Author),
             partial(TaxonomyGenerator, content_class=Tag),
+            # Content generators
             ArticlesGenerator,
             PagesGenerator,
+            # FeedGenerator must always come after content generators
+            FeedGenerator,
             # DirectTemplatesGenerator must always come after content generators
             DirectTemplatesGenerator,
             GranularArchivesGenerator,

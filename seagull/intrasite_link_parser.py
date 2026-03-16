@@ -157,7 +157,6 @@ class IntrasiteLinkParser:
         context_key = (
             "generated_content" if identifier == "filename" else "static_content"
         )
-        # TODO handle attached files
         if not (target_obj := getattr(context, context_key).get(target)):
             return None
         return target_obj.url

@@ -18,6 +18,5 @@ class StaticWriter(Writer):
         del context  # Unused argument
         # StaticWriter simply instructs write_file to copy the source file to the output
         return {
-            self.settings.output_path / obj.save_as: self.settings.path
-            / obj.source_path
+            obj.settings.output_path / obj.save_as: obj.settings.path / obj.source_path
         }

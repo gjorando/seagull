@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader, PrefixLoader
 
+from seagull.contents.feed import FeedType
 from seagull.decorators import extra_dataclass
 from seagull.log import logger
 from seagull.utils import (
@@ -193,6 +194,35 @@ class Settings:
     path_metadata: str = ""
     extra_path_metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
 
+    # Feed
+    feed_domain: str | None = None
+    feed_types: list[FeedType] = field(default_factory=lambda: [FeedType.ATOM])
+    all_feed_url: str = ""
+    all_feed_save_as: Path | None = Path("feeds/all.{feed_type}.xml")
+    feed_url: str = ""
+    feed_save_as: Path | None = None
+    feed_lang_url: str = ""
+    feed_lang_save_as: Path | None = None
+    category_feed_url: str = ""
+    category_feed_save_as: Path | None = Path("feeds/category/{slug}.{feed_type}.xml")
+    category_feed_lang_url: str = ""
+    category_feed_lang_save_as: Path | None = Path(
+        "{lang}/feeds/category/{slug}.{feed_type}.xml"
+    )
+    author_feed_url: str = ""
+    author_feed_save_as: Path | None = Path("feeds/author/{slug}.{feed_type}.xml")
+    author_feed_lang_url: str = ""
+    author_feed_lang_save_as: Path | None = Path(
+        "{lang}/feeds/author/{slug}.{feed_type}.xml"
+    )
+    tag_feed_url: str = ""
+    tag_feed_save_as: Path | None = None
+    tag_feed_lang_url: str = ""
+    tag_feed_lang_save_as: Path | None = None
+    feed_max_items: int | None = 100
+    rss_feed_summary_only: bool = True
+    feed_append_ref: bool = False
+
     # Pagination
     default_orphans: int = 0
     default_pagination: int = 0
@@ -294,6 +324,8 @@ class Settings:
         self._init_theme(installed_themes_path)
         # Setup the jinja environment
         self._init_jinja_environment(installed_themes_path)
+        # Validate the feed-related settings
+        self._validate_feed_settings()
         # Finally, register all localized settings; this must always be done last
         for lang in (self.default_lang, *self.langs):
             self.localized_settings(lang)
@@ -354,6 +386,12 @@ class Settings:
             for p in includes:
                 if p not in excludes:
                     excludes.append(p)
+
+    def _validate_feed_settings(self) -> None:
+        """Feed settings validation."""
+        if not self.feed_domain:
+            self.feed_domain = self.siteurl
+        self.feed_types = [FeedType(f.lower()) for f in self.feed_types]
 
     def _init_i18n(self) -> None:
         """Set up internationalization related settings."""

@@ -28,11 +28,7 @@ INDEX_LANG_URL = "{lang}/posts/"
 INDEX_LANG_SAVE_AS = INDEX_LANG_URL + "index.html"
 
 # Feed generation is usually not desired when developing
-FEED_ALL_ATOM = None
-CATEGORY_FEED_ATOM = None
-TRANSLATION_FEED_ATOM = None
-AUTHOR_FEED_ATOM = None
-AUTHOR_FEED_RSS = None
+# FEED_TYPES = []
 
 THEME_LANG = "en"
 

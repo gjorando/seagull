@@ -79,8 +79,8 @@ class Writer(ABC):
 
         :param obj: Seagull object.
         :param context: Shared context.
-        :return: A dictionary of paths, mapped to a content string ready to be written
-        to the path, or a Path pointing to a file that will be copied directly.
+        :return: A dictionary of absolute paths, mapped to a content string ready to be
+        written to the path, or a Path pointing to a file that will be copied directly.
         """
 
     @staticmethod
@@ -108,7 +108,7 @@ class Writer(ABC):
         """
         # Parse the data and save it
         for dest_path, content in self._parse_data(obj, context).items():
-            log_dest_path = dest_path.relative_to(self.settings.output_path.parent)
+            log_dest_path = dest_path.relative_to(obj.settings.output_path.parent)
             logger.debug(f"Writing '{log_dest_path}'.")
             try:
                 # mkdir -p the output directory if required

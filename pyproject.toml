@@ -1,7 +1,7 @@
 [project]
 name = "seagull"
 authors = [
-    { name = "Guillaume Jorandon", email = "nobody@nowhere.nothing" },
+    { name = "Guillaume Jorandon", email = "guillaume.jorandon.1@ulaval.ca" },
     { name = "Justin Mayer", email = "authors@getpelican.com" }
 ]
 description = "An opinionated re-implementation of the Pelican static site generator"
@@ -32,7 +32,8 @@ dependencies = [
     "docutils>=0.22.0",
     "python-slugify>=8.0",
     "BeautifulSoup4>=4.14",
-    #    "feedgenerator>=2.1.0",
+    "feedgenerator>=2.2.0",
+    "MarkupSafe>=2.0.0",
     "jinja2>=3.1.2",
     #    "pygments>=2.16.1,<2.20.0",
     #    "rich>=13.6.0",
@@ -101,9 +102,9 @@ dev = [
 
 [tool.pdm.build]
 source-includes = [
-    "CONTRIBUTING.rst",
+    #    "CONTRIBUTING.rst",
     "THANKS",
-    "docs/changelog.rst",
+    #    "docs/changelog.rst",
     "samples/",
 ]
 excludes = [
@@ -170,7 +171,6 @@ select = [
 ]
 
 ignore = [
-    # FIXME enable autoescape and disable for formatted fields
     # With our usage, we actually want autoescape to be False
     "S701"
 ]

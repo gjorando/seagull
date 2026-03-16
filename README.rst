@@ -12,7 +12,7 @@ Why the name "Seagull"?
 
 Ok, Seagull is a fork of Pelican. Pelicans are big water birds, just like seagulls.
 
-"Pelican" is named like that because it is an anagram of *calepin*, which means "notebook" in French. I looked it up, turns out "Seagull" is an anagram of "sullage", which according to the Merriam-Webster dictionary, is a synonym of... *Checks notes* "sewage".
+"Pelican" is named like that because it is an anagram of *calepin*, which means "notebook" in French. I looked it up, turns out "Seagull" is an anagram of "sullage", which according to the Merriam-Webster dictionary, is a synonym of… *Checks notes* "sewage".
 
 Okay, but seagulls are really cool birds.
 
@@ -31,7 +31,8 @@ TO-DO
 - [X] Granular archives.
 - [ ] Improve type annotations (for instance, replace `list` with `Sequence`, `dict` with `Mapping`, etc.).
 - [ ] Handling of sorting in the archives: Right now I am enforcing the reverse chronological order in the granular archives, while the general archives keep the article sorting defined in the settings (by virtue of the general archives being a direct template). I think I should unify archives and granular archives (general archives have a "null" granularity), and add a setting for the sorting of archives.
-- [X] Pagination
+- [X] Pagination.
+- [ ] Attached files with `{attach}`.
 - [ ] Documentation.
 - [ ] Clarify the canonical order of arguments in the public API. Lessen the use of the whole `Settings` object in argument lists, instead passing the setting value(s) we need directly.
 - [ ] Pygments.

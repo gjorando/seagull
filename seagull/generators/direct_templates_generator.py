@@ -54,7 +54,7 @@ class DirectTemplatesGenerator[T: DirectTemplate](Generator):
     def valid_paths(self) -> Iterable[Path]:
         """Unused property."""
         # FIXME maybe having unused property means we should have a base generic
-        # Generator class, and all others Generator subclases should instead inherit
+        # Generator class, and all others Generator subclasses should instead inherit
         # from a FileReaderGenerator or something?
         return []
 

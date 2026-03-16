@@ -33,6 +33,7 @@ class Reader(ABC):
         """
         self.settings = settings
 
+    # TODO deal with code duplication with Writer class
     @classmethod
     def all_readers(cls) -> Iterable[type[Reader]]:
         """Yield the list of enabled reader classes."""

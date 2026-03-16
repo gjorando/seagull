@@ -1,6 +1,7 @@
 from seagull.contents.article import Article
 from seagull.contents.content import Content
 from seagull.contents.direct_template import DirectTemplate
+from seagull.contents.feed import Feed
 from seagull.contents.granular_archive import GranularArchive
 from seagull.contents.page import Page
 from seagull.contents.seagull_object import SeagullObject
@@ -13,6 +14,7 @@ __all__ = [
     "Category",
     "Content",
     "DirectTemplate",
+    "Feed",
     "GranularArchive",
     "Page",
     "SeagullObject",

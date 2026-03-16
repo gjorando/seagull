@@ -27,12 +27,14 @@ class SeagullObject:
     MANDATORY_FIELDS: ClassVar[tuple[str, ...]] = (
         "slug",
         "save_as",
-        "url",
+        "url",  # URL must be placed after save_as, as save_as is a fallback for URL
         "base_path",
     )
     """Fields that should be set.
 
     What it means is that they can't evaluate to `False` at the end of `__post_init__`.
+    The order in which they are defined is important, because it determines the order
+    in which auto-generation methods are called.
     """
 
     settings: Settings = field(compare=False, repr=False)
@@ -96,10 +98,9 @@ class SeagullObject:
                     self.settings = self.settings.localized_settings(self.lang)
 
         # Try calling the auto-compute properties for mandatory fields
-        for key in self.MANDATORY_FIELDS:
-            # '_<field>' are our auto-generation property fallbacks
-            value = getattr(self, key) or getattr(self, f"_{key}", "")
-            setattr(self, key, value)
+        for f in self.MANDATORY_FIELDS:
+            if not getattr(self, f):
+                setattr(self, f, getattr(self, f"_{f}", None))
 
         # If there's a source path, it must be relative to the base path
         if self.source_path and not self.source_path.is_relative_to(self.base_path):
@@ -303,10 +304,12 @@ class SeagullObject:
         :raise SkippedFileError: If there is no valid setting key for this type of
         object.
         """
-        output_path = getattr(self.settings, self._field_setting_key("save_as"), None)
+        setting_key = self._field_setting_key("save_as")
+        output_path = getattr(self.settings, setting_key, None)
         if not output_path:
             raise SkippedFileError(
-                "No `save_as` value could be computed for the object."
+                f"No `save_as` value could be computed for the object "
+                f"(attempted to load setting '{setting_key}')."
             )
         output_path = str(output_path).format(**self.as_dict())
         return Path(output_path)
@@ -315,7 +318,8 @@ class SeagullObject:
     def _url(self) -> str:
         """Auto-generate the url."""
         url = getattr(self.settings, self._field_setting_key("url"))
-        return url.format(**self.as_dict())
+        # We fall back to the save as attribute if the url format is empty
+        return url.format(**self.as_dict()) or str(self.save_as)
 
     @property
     def _lang(self) -> str:
