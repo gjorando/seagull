@@ -172,9 +172,14 @@ class IntrasiteLinkParser:
         :return: The target link, or `None` if there is no taxonomy with this type and
         name.
         """
+        # FIXME translations
         # Try fetching the taxon by name
         for taxon in taxa:
             if taxon.name == taxon_name:
+                return taxon.url
+        # Then try fetching by slug FIXME
+        for taxon in taxa:
+            if taxon.slug == taxon_name:
                 return taxon.url
         return None
 

@@ -1,25 +1,17 @@
 from typing import TYPE_CHECKING
 
-from seagull.contents import Taxonomy
+from seagull.contents import Author, Category, Tag, Taxonomy
 from seagull.generators.generator import Generator
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
     from pathlib import Path
 
-    from seagull.context import Context
-    from seagull.settings import Settings
 
-
-class TaxonomyGenerator[T: Taxonomy](Generator):
+class TaxonomiesGenerator[T: Taxonomy](Generator):
     """A special generator class for pre-processing taxonomies."""
 
-    def __init__(self, settings: Settings, context: Context, content_class: type[T]):
-        """
-        :param content_class: The actual taxonomy that the generator creates.
-        """
-        super().__init__(settings, context)
-        self._content_class = content_class
+    content_class: type[T] = Taxonomy
 
     def link_translations(self) -> None:
         # Before linking translations, we need to update the generated content with
@@ -28,11 +20,6 @@ class TaxonomyGenerator[T: Taxonomy](Generator):
             if obj not in self.all_content:
                 self.all_content.append(obj)
         super().link_translations()
-
-    @property
-    def content_class(self) -> type[T]:
-        """Type of object created by the generator."""
-        return self._content_class
 
     @property
     def base_path(self) -> Path:
@@ -45,3 +32,28 @@ class TaxonomyGenerator[T: Taxonomy](Generator):
     @property
     def excluded_paths(self) -> Iterable[Path]:
         return getattr(self.settings, f"{self.content_class.__name__.lower()}_excludes")
+
+
+class TagsGenerator[T: Tag](TaxonomiesGenerator):
+    """The taxonomy generator for tags handles optional filters as well."""
+
+    content_class: type[T] = Tag
+
+    def link_translations(self) -> None:
+        # Perform the filtering
+        for tag in self.all_content:
+            tag.filter_and_update(self.context.articles)
+        # No need to worry about tags created by articles as they cannot have a filter
+        super().link_translations()
+
+
+class CategoriesGenerator[T: Category](TaxonomiesGenerator):
+    """Categories generator."""
+
+    content_class: type[T] = Category
+
+
+class AuthorsGenerator[T: Author](TaxonomiesGenerator):
+    """Authors generator."""
+
+    content_class: type[T] = Author

@@ -1,5 +1,6 @@
 from collections import defaultdict
 from collections.abc import Collection
+from dataclasses import fields
 from typing import TYPE_CHECKING, Any, cast
 
 from seagull.contents import (
@@ -103,21 +104,26 @@ class Context(Collection[SeagullObject]):
             raise ValueError(obj_class)
         return filter(function, self.objects[obj_class])
 
-    def content_by_status[T: Content](
-        self, status: str, content_class: type[T]
+    def objects_by_status[T: SeagullObject](
+        self, status: str, object_class: type[T]
     ) -> Iterable[T]:
-        """Iterate over `Content` objects of a specific status.
+        """Iterate over seagull objects of a specific status.
 
-        :param content_class: The type of content to filter.
-        :param status: Status of the articles to retrieve.
+        :param object_class: The type of object to filter.
+        :param status: Status of the objects to retrieve.
         :return: Iterable of objects.
-        :raise ValueError: If `obj_class` is not a subclass of `SeagullObject`.
+        :raise ValueError: If `obj_class` doesn't have a `status`.
         """
 
-        def filter_func(obj: Content) -> bool:
-            return obj.status == status
+        def filter_func(obj: SeagullObject) -> bool:
+            return getattr(obj, "status", "") == status
 
-        return self.filter_objects(content_class, filter_func)
+        if "status" not in (f.name for f in fields(object_class)):
+            raise ValueError(
+                f"Objects of type '{object_class.__name__}' don't have a status."
+            )
+
+        return self.filter_objects(object_class, filter_func)
 
     def prune_taxonomies(self) -> None:
         """Remove empty taxa."""
@@ -255,9 +261,14 @@ class Context(Collection[SeagullObject]):
             "hidden_articles": list(filter(lang_filter, self.hidden_articles)),
             "drafts": list(filter(lang_filter, self.draft_articles)),
             "period_archives": period_archives,
-            "authors": list(filter(lang_filter, self.authors)),
-            "categories": list(filter(lang_filter, self.categories)),
-            "tags": list(filter(lang_filter, self.tags)),
+            # FIXME attributes for hidden taxonomies?
+            "authors": list(
+                filter(lang_filter, self.objects_by_status("published", Author))
+            ),
+            "categories": list(
+                filter(lang_filter, self.objects_by_status("published", Category))
+            ),
+            "tags": list(filter(lang_filter, self.objects_by_status("published", Tag))),
             "pages": list(filter(lang_filter, self.published_pages)),
             "hidden_pages": list(filter(lang_filter, self.hidden_pages)),
             "draft_pages": list(filter(lang_filter, self.draft_pages)),
@@ -266,27 +277,27 @@ class Context(Collection[SeagullObject]):
 
     @property
     def published_articles(self) -> Iterable[Article]:
-        return self.content_by_status(status="published", content_class=Article)
+        return self.objects_by_status(status="published", object_class=Article)
 
     @property
     def hidden_articles(self) -> Iterable[Article]:
-        return self.content_by_status(status="hidden", content_class=Article)
+        return self.objects_by_status(status="hidden", object_class=Article)
 
     @property
     def draft_articles(self) -> Iterable[Article]:
-        return self.content_by_status(status="draft", content_class=Article)
+        return self.objects_by_status(status="draft", object_class=Article)
 
     @property
     def published_pages(self) -> Iterable[Page]:
-        return self.content_by_status(status="published", content_class=Page)
+        return self.objects_by_status(status="published", object_class=Page)
 
     @property
     def hidden_pages(self) -> Iterable[Page]:
-        return self.content_by_status(status="hidden", content_class=Page)
+        return self.objects_by_status(status="hidden", object_class=Page)
 
     @property
     def draft_pages(self) -> Iterable[Page]:
-        return self.content_by_status(status="draft", content_class=Page)
+        return self.objects_by_status(status="draft", object_class=Page)
 
     @property
     def taxonomies(self) -> dict[type[Taxonomy], list[Taxonomy]]:

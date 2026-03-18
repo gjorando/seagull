@@ -276,7 +276,6 @@ class Settings:
     _jinja_env_object: Environment | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
-        logger.warning(f"{self.output_path}, {Path.cwd()}")
         """Parse and normalize various settings."""
         # Coalesce these relative paths to absolute paths relative to _working_dir,
         # which is usually the directory where the settings module is

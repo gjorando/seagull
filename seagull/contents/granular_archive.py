@@ -6,14 +6,13 @@ from typing import TYPE_CHECKING, ClassVar
 
 from jinja2 import TemplateNotFound
 
+from seagull.contents.composable_classes import ArticlesContainer
 from seagull.contents.direct_template import DirectTemplate
 from seagull.exceptions import InvalidObjectError
 
 if TYPE_CHECKING:
     from datetime import date
     from typing import Any
-
-    from seagull.contents.article import Article
 
 
 class ArchiveGranularity(StrEnum):
@@ -26,11 +25,11 @@ class ArchiveGranularity(StrEnum):
 
 # FIXME maybe also inherit from a Taxonomy
 @dataclass
-class GranularArchive(DirectTemplate):
+class GranularArchive(ArticlesContainer, DirectTemplate):
     MANDATORY_FIELDS: ClassVar[tuple[str, ...]] = (
-        *DirectTemplate.MANDATORY_FIELDS,
         "date",
         "granularity",
+        *DirectTemplate.MANDATORY_FIELDS,
     )
 
     date: date | None = field(default=None, compare=False, repr=False)
@@ -39,8 +38,6 @@ class GranularArchive(DirectTemplate):
         default=None, compare=False, repr=False
     )
     """Granularity level."""
-    articles: list[Article] = field(default_factory=list, compare=False, repr=False)
-    """List of articles in the archive."""
 
     def _field_setting_key(self, field_name: str) -> str:
         lang_fragment = "" if self.in_default_lang else "lang"
@@ -75,7 +72,7 @@ class GranularArchive(DirectTemplate):
     @property
     def jinja_context(self) -> dict[str, Any]:
         return super().jinja_context | {
-            "articles": self.articles,
+            # FIXME we should access period_num and period from the object in a template
             "period_num": self.period_num,
             "period": self.period,
         }

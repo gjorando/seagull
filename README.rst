@@ -27,7 +27,8 @@ TO-DO
 - [ ] Update a bunch of development files like `CONTRIBUTING.rst`.
 - [ ] Better handling of generated taxonomies.
 - [ ] Better handling of localized settings.
-- [ ] Hidden taxonomies.
+- [X] Hidden taxonomies (ie. taxonomies that are unlisted in the rendering context).
+- [X] A way to generate arbitrary views of articles (like for instance, a virtual category that filters some article based on arbitrary filters).
 - [X] reStructuredText's `abbr` tag.
 - [X] RSS and Atom feeds.
 - [X] Granular archives.

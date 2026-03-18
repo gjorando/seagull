@@ -7,7 +7,7 @@ docs/_build
 docs/*/_build
 build
 dist
-tags
+/tags
 .tox
 .coverage
 htmlcov

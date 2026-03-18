@@ -9,8 +9,8 @@ class DirectTemplate(SeagullObject):
     """A direct template object."""
 
     MANDATORY_FIELDS: ClassVar[tuple[str, ...]] = (
-        *SeagullObject.MANDATORY_FIELDS,
         "template",
+        *SeagullObject.MANDATORY_FIELDS,
     )
 
     def _field_setting_key(self, field_name: str) -> str:

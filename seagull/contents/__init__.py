@@ -1,3 +1,4 @@
+from seagull.contents import composable_classes
 from seagull.contents.article import Article
 from seagull.contents.content import Content
 from seagull.contents.direct_template import DirectTemplate
@@ -21,4 +22,5 @@ __all__ = [
     "Static",
     "Tag",
     "Taxonomy",
+    "composable_classes",
 ]

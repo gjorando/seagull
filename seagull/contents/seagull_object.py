@@ -28,14 +28,15 @@ class SeagullObject:
         "slug",
         "save_as",
         "url",  # URL must be placed after save_as, as save_as is a fallback for URL
-        "base_path",
     )
-    """Fields that should be set.
+    """Fields that should be set. Auto-generation is attempted if they're not set.
 
     What it means is that they can't evaluate to `False` at the end of `__post_init__`.
     The order in which they are defined is important, because it determines the order
     in which auto-generation methods are called.
     """
+    GENERATED_FIELDS: ClassVar[tuple[str, ...]] = ("base_path",)
+    """Fields that are auto-generated if not set, but that can be unset."""
 
     settings: Settings = field(compare=False, repr=False)
     """Settings associated with the object."""
@@ -97,8 +98,13 @@ class SeagullObject:
                 with contextlib.suppress(ValueError):
                     self.settings = self.settings.localized_settings(self.lang)
 
-        # Try calling the auto-compute properties for mandatory fields
-        for f in self.MANDATORY_FIELDS:
+            # If there is a manually set save_as, the URL should be set to the same
+            # value instead of auto-generated
+            if self.save_as and not self.url:
+                self.url = self.save_as
+
+        # Try calling the auto-compute properties for mandatory/generated fields
+        for f in self.MANDATORY_FIELDS + self.GENERATED_FIELDS:
             if not getattr(self, f):
                 setattr(self, f, getattr(self, f"_{f}", None))
 
@@ -317,9 +323,13 @@ class SeagullObject:
     @property
     def _url(self) -> str:
         """Auto-generate the url."""
-        url = getattr(self.settings, self._field_setting_key("url"))
-        # We fall back to the save as attribute if the url format is empty
-        return url.format(**self.as_dict()) or str(self.save_as)
+        url = getattr(self.settings, self._field_setting_key("url"), "")
+        # We fall back to the save as attribute if the url format is empty or couldn't
+        # be computed
+        formatted_url = ""
+        with contextlib.suppress(TypeError):
+            formatted_url = url.format(**self.as_dict())
+        return formatted_url or str(self.save_as)
 
     @property
     def _lang(self) -> str:

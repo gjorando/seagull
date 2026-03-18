@@ -1,12 +1,10 @@
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 from urllib.parse import urljoin
 
+from seagull.contents.composable_classes import ArticlesContainer
 from seagull.contents.seagull_object import SeagullObject
-
-if TYPE_CHECKING:
-    from seagull.contents import Article
 
 
 class FeedType(StrEnum):
@@ -17,22 +15,20 @@ class FeedType(StrEnum):
 
 
 @dataclass
-class Feed(SeagullObject):
+class Feed(ArticlesContainer, SeagullObject):
     """An object describing feeds."""
 
     MANDATORY_FIELDS: ClassVar[tuple[str, ...]] = (
-        *SeagullObject.MANDATORY_FIELDS,
         "feed_type",
         "lang",
         "articles",
+        *SeagullObject.MANDATORY_FIELDS,
     )
 
     feed_type: FeedType = field(default=FeedType.ATOM, compare=False, repr=False)
     """Type of feed generated."""
     feed_category: str = field(default="", compare=False, repr=False)
     """Category of feed (either "all", empty, or a taxonomy name)."""
-    articles: list[Article] = field(default_factory=list, compare=False, repr=False)
-    """List of articles associated to the feed."""
 
     def __post_init__(self) -> None:
         super().__post_init__()

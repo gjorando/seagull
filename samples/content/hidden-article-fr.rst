@@ -4,6 +4,7 @@ Un article caché
 :slug: hidden-article
 :date: 2020-01-05
 :lang: fr
+:tags: foo
 :status: hidden
 
 Ceci est un article caché.

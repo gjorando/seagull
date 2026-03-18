@@ -15,8 +15,8 @@ class Static(SeagullObject):
     """Seagull static content."""
 
     MANDATORY_FIELDS: ClassVar[tuple[str, ...]] = (
-        *SeagullObject.MANDATORY_FIELDS,
         "source_path",
+        *SeagullObject.MANDATORY_FIELDS,
     )
 
     def update_intrasite_links(self, context: Context) -> None:

@@ -27,8 +27,6 @@ class FeedGenerator[T: Feed](Generator):
 
     def _create_objects(self) -> list[T]:
         all_content: list[T] = []
-        # We must ensure that empty taxonomies are pruned, to avoid creating empty feeds
-        self.context.prune_taxonomies()
         # For each type of feed that's been enabled
         for feed_type in self.settings.feed_types:
             # List of [feed title, feed slug, feed category, feed lang, feed articles]
@@ -72,6 +70,7 @@ class FeedGenerator[T: Feed](Generator):
                 )
                 for taxon_class, taxon_list in self.context.taxonomies.items()
                 for taxon in taxon_list
+                if taxon.articles
             )
             # For each taxonomy + all published articles, create one feed per lang
             for title, slug, category, lang, articles in per_feed_articles:

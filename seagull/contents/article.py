@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar
 
-from seagull.contents.content import Content, ContentStatus
+from seagull.contents.content import Content, ObjectStatus
 from seagull.contents.taxonomies import Author, Category, Tag
 
 if TYPE_CHECKING:
@@ -73,15 +73,16 @@ class Article(Content):
     """A seagull article object."""
 
     MANDATORY_FIELDS: ClassVar[tuple[str, ...]] = (
-        *Content.MANDATORY_FIELDS,
         "date",
+        "base_path",
         "category",
         "authors",
+        *Content.MANDATORY_FIELDS,
     )
 
     date: datetime | None = field(default=None, compare=False, repr=False)
     """Publication date for the article."""
-    category: Category | None = field(default_factory=None, compare=False, repr=False)
+    category: Category | None = field(default=None, compare=False, repr=False)
     """Category of the article."""
     tags: list[Tag] = field(default_factory=list, compare=False, repr=False)
     """List of tags."""
@@ -91,7 +92,7 @@ class Article(Content):
     def __post_init__(self) -> None:
         super().__post_init__()
         # If the article is published, add it to its taxonomies
-        if self.status == ContentStatus.PUBLISHED:
+        if self.status == ObjectStatus.PUBLISHED:
             self.category.articles.append(self)
             for tag in self.tags:
                 tag.articles.append(self)
@@ -109,7 +110,7 @@ class Article(Content):
         **metadata: object | str,
     ) -> Self:
         # Parse the raw publication date if applicable
-        if raw_date := metadata.get("date", ""):
+        if raw_date := metadata.get("date"):
             metadata["date"] = datetime.fromisoformat(raw_date)
 
         # We need to know the lang of the article to retrieve the appropriate taxonomy
@@ -148,7 +149,7 @@ class Article(Content):
 
     def _field_setting_key(self, field_name: str) -> str:
         # Special case for the article, "draft_*" instead of "draft_article_*"
-        draft_fragment = "draft" if self.status == ContentStatus.DRAFT else "article"
+        draft_fragment = "draft" if self.status == ObjectStatus.DRAFT else "article"
         lang_fragment = "" if self.in_default_lang else "lang"
         return "_".join(f for f in (draft_fragment, lang_fragment, field_name) if f)
 

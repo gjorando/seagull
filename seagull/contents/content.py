@@ -1,41 +1,35 @@
 import re
 from dataclasses import dataclass, field, fields
 from datetime import datetime
-from enum import StrEnum, auto
 from typing import TYPE_CHECKING, ClassVar
 
 from bs4 import BeautifulSoup
 
+from seagull.contents.composable_classes import HasStatus, ObjectStatus
 from seagull.contents.seagull_object import SeagullObject
-from seagull.exceptions import InvalidObjectError, SkippedFileError
 
 if TYPE_CHECKING:
     from pathlib import Path
     from typing import Self
 
-    from seagull import Context, Settings
-
-
-class ContentStatus(StrEnum):
-    """Status of a content object."""
-
-    PUBLISHED = auto()
-    HIDDEN = auto()
-    DRAFT = auto()
-    SKIP = auto()
+    from seagull.context import Context
+    from seagull.settings import Settings
 
 
 @dataclass
-class Content(SeagullObject):
+class Content(HasStatus, SeagullObject):
     """Base class for seagull content."""
 
     MANDATORY_FIELDS: ClassVar[tuple[str, ...]] = (
-        *SeagullObject.MANDATORY_FIELDS,
         "title",
         "lang",
         "template",
         "status",
         "source_path",
+        *SeagullObject.MANDATORY_FIELDS,
+    )
+    GENERATED_FIELDS: ClassVar[tuple[str, ...]] = (
+        *SeagullObject.GENERATED_FIELDS,
         "summary",
     )
     # We pre-compile the regexes used by Content._summary to separate and count words
@@ -60,18 +54,10 @@ class Content(SeagullObject):
 
     modified: datetime | None = field(default=None, compare=False, repr=False)
     """Last modification date."""
-    status: ContentStatus = field(
-        default=ContentStatus.PUBLISHED, compare=False, repr=False
-    )
-    """Publication status of the content."""
     summary: str = field(default="", compare=False, repr=False)
     """Short summary for the content."""
 
     def __post_init__(self) -> None:
-        # We skip objects with a skip status
-        if self.status == ContentStatus.SKIP:
-            raise SkippedFileError(self.source_path)
-
         super().__post_init__()
 
         # Add tzinfo to our date fields if necessary
@@ -93,13 +79,6 @@ class Content(SeagullObject):
         base_path: Path,
         **metadata: object | str,
     ) -> Self:
-        # Parse the status, raising an InvalidObjectError if it's not a valid status
-        if raw_status := metadata.get("status", ""):
-            try:
-                metadata["status"] = ContentStatus(raw_status)
-            except ValueError as e:
-                raise InvalidObjectError from e
-
         # Parse the raw modified date if applicable
         if raw_modified := metadata.get("modified", "").strip():
             metadata["modified"] = datetime.fromisoformat(raw_modified)
@@ -110,7 +89,7 @@ class Content(SeagullObject):
 
     def _field_setting_key(self, field_name: str) -> str:
         # Add the draft fragment
-        draft_fragment = "draft" if self.status == ContentStatus.DRAFT else ""
+        draft_fragment = "draft" if self.status == ObjectStatus.DRAFT else ""
         return "_".join(
             f for f in (draft_fragment, super()._field_setting_key(field_name)) if f
         )

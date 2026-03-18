@@ -3,17 +3,19 @@ import shutil
 from functools import partial
 from typing import TYPE_CHECKING
 
-from seagull.contents import Author, Category, Content, Tag, Taxonomy
-from seagull.contents.content import ContentStatus
+from seagull.contents import Content, Taxonomy
+from seagull.contents.content import ObjectStatus
 from seagull.context import Context
 from seagull.generators import (
     ArticlesGenerator,
+    AuthorsGenerator,
+    CategoriesGenerator,
     DirectTemplatesGenerator,
     FeedGenerator,
     GranularArchivesGenerator,
     PagesGenerator,
     StaticGenerator,
-    TaxonomyGenerator,
+    TagsGenerator,
 )
 from seagull.log import error_with_paths, logger
 from seagull.utils import Comparable, PluralFormatter
@@ -115,15 +117,15 @@ class Seagull:
         for g in generators:
             g.generate_context()
 
-        # Prune the context from empty taxa
-        self.context.prune_taxonomies()
-
         # Then, we link the translations together
         for g in generators:
             g.link_translations()
 
         # We sort the objects
         self._sort_context()
+
+        # Prune the context from empty taxa
+        self.context.prune_taxonomies()
 
         # We update intrasite links for all objects
         for obj in self.context:
@@ -163,7 +165,7 @@ class Seagull:
         for object_class, objs in self.context.objects.items():
             # For content objects, log by status
             if issubclass(object_class, Content):
-                for status in ContentStatus:
+                for status in ObjectStatus:
                     if num_status := len(
                         list(filter(lambda c: c.status == status, objs))
                     ):
@@ -192,9 +194,9 @@ class Seagull:
         """Get the list of generator classes to run."""
         return [
             # Taxonomy generators must always come before content generators
-            partial(TaxonomyGenerator, content_class=Category),
-            partial(TaxonomyGenerator, content_class=Author),
-            partial(TaxonomyGenerator, content_class=Tag),
+            CategoriesGenerator,
+            AuthorsGenerator,
+            TagsGenerator,
             # Content generators
             ArticlesGenerator,
             PagesGenerator,
