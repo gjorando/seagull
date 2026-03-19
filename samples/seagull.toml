@@ -1,0 +1,39 @@
+[seagull]
+
+author = "John Doe"
+sitename = "Test website"
+siteurl = "http://localhost:8000"
+
+path = "content"
+
+timezone = "Europe/Paris"
+
+default_lang = "en"
+locale = "en_US.UTF-8"
+date_format = "%B %d, %Y"
+
+index_url = "posts/"
+index_save_as = "posts/index.html"
+index_lang_url = "{lang}/posts/"
+index_lang_save_as = "{lang}/posts/index.html"
+
+theme_lang = "en"
+
+default_pagination = 10
+
+relative_urls = true
+delete_output_directory = true
+
+[seagull.langs.fr]
+sitename = "Site de test"
+locale = "fr_FR.UTF-8"
+date_format = "%A %d %B %Y"
+
+[seagull.langs.jp]
+sitename =  "テストサイト"
+locale = "ja_JP.UTF-8"
+date_format = "%Y年%B%d日（%a）"
+
+# FIXME currently not implemented
+[seagull.user_settings]
+foo = "bar"

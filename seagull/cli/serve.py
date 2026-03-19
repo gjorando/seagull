@@ -1,8 +1,16 @@
+import threading
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
+import click_extra as clickx
+
+from seagull.cli.click import IPAddressType, pass_output_path
+from seagull.cli.main import main
 from seagull.log import logger
+
+if TYPE_CHECKING:
+    from ipaddress import IPv4Address, IPv6Address
 
 
 class DevHTTPRequestHandler(SimpleHTTPRequestHandler):
@@ -45,16 +53,52 @@ class DevHTTPServer(HTTPServer):
 
     allow_reuse_address: bool = True
 
-    def __init__(self, addr: str, port: int, output_path: Path):
+    def __init__(self, address: str, port: int, output_path: Path):
         """Initialize the development server
 
-        :param addr: Address to listen to.
+        :param address: Address to listen to.
         :param port: Port to listen on.
         :param output_path: Path to serve.
         """
         super().__init__(
-            server_address=(addr, port),
+            server_address=(address, port),
             RequestHandlerClass=lambda req, addr, server: DevHTTPRequestHandler(
                 req, addr, server, directory=output_path
             ),
         )
+
+
+@main.command("serve")
+@clickx.option(
+    "--bind",
+    "-b",
+    "address",
+    type=IPAddressType(),
+    default="127.0.0.1",
+    help="IP to bind to when the development HTTP server is enabled.",
+)
+@clickx.option(
+    "--port",
+    "-p",
+    type=clickx.IntRange(0, 2**16, max_open=True),
+    default=8000,
+    help="Port for the development HTTP server.",
+)
+@pass_output_path
+@clickx.pass_obj
+def serve(
+    thread_list: list, output_path: Path, address: IPv4Address | IPv6Address, port: int
+) -> None:
+    """Run the development HTTP server."""
+
+    def process() -> None:
+        try:
+            server = DevHTTPServer(str(address), port, output_path)
+        except OSError:
+            clickx.get_current_context().fail(f"Couldn't listen on '{address}:{port}'.")
+
+        clickx.echo(f"Serving site at 'http://{address}:{port}'.")
+        server.serve_forever()
+
+    t = threading.Thread(target=process, daemon=True)
+    thread_list.append(t)

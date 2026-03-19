@@ -1,12 +1,7 @@
 import gettext
 import locale
-import os
-import sys
 from dataclasses import dataclass, field, fields
 from importlib import import_module
-from importlib.util import module_from_spec, spec_from_file_location
-from inspect import getmembers
-from ipaddress import IPv4Address, IPv6Address, ip_address
 from itertools import batched, permutations, product
 from operator import attrgetter
 from pathlib import Path
@@ -16,7 +11,6 @@ from zoneinfo import ZoneInfo
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader, PrefixLoader
 
 from seagull.contents.feed import FeedType
-from seagull.decorators import extra_dataclass
 from seagull.log import logger
 from seagull.utils import (
     PaginationRule,
@@ -30,7 +24,6 @@ from seagull.utils import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from types import ModuleType
     from typing import Any, Self
 
     from jinja2 import BaseLoader
@@ -39,7 +32,6 @@ if TYPE_CHECKING:
     from seagull.utils import Comparable
 
 
-@extra_dataclass
 @dataclass(kw_only=True, repr=False)
 class Settings:
     # Basic settings
@@ -81,10 +73,6 @@ class Settings:
     intrasite_link_regex: str = r"{(?P<what>.*?)}"
     cache_path: Path = Path("cache")
     formatted_fields: list = field(default_factory=lambda: ["summary"])
-    port: int = 8000
-    bind: IPv4Address | IPv6Address = field(
-        default_factory=lambda: ip_address("127.0.0.1")
-    )
     seagull_class: type | str = "seagull.Seagull"
 
     # URL settings
@@ -245,7 +233,6 @@ class Settings:
     # Translations
     default_lang: str = "en"
     langs: dict[str, dict] = field(default_factory=dict)
-    use_subsites: bool = False
 
     # Ordering content
     # TODO allow for sorting by more than one function (eg. sort by date, then by name)
@@ -270,7 +257,7 @@ class Settings:
     display_categories_on_menu: bool = True
 
     # Technical fields
-    _settings_path: Path | None = field(default=None, repr=False)
+    settings_path: Path | None = field(default=None, repr=False)
     _overrides: dict[str, Any] = field(default_factory=dict, repr=False)
     _localized_settings: dict[str, Self] = field(default_factory=dict, repr=False)
     _jinja_env_object: Environment | None = field(default=None, repr=False)
@@ -304,9 +291,6 @@ class Settings:
         # Add the trailing slash if missing (important for link joining)
         if not self.siteurl.endswith("/"):
             self.siteurl = f"{self.siteurl}/"
-        # Parse the IP address in bind
-        if not isinstance(self.bind, (IPv4Address, IPv6Address)):
-            self.bind = ip_address(self.bind)
         # Convert our pagination rules to the named tuple type,
         # and ensure they're sorted
         self.pagination_patterns = sorted(
@@ -550,8 +534,6 @@ class Settings:
         context.update(lang_overrides)
         # Update the default_lang for these localized settings
         context["default_lang"] = lang
-        # Do not re-do the subsites setup in localized settings
-        context["use_subsites"] = False
         # Keep track of the lang overrides and the other localized settings
         context["_overrides"] = lang_overrides
         context["_localized_settings"] = self._localized_settings
@@ -559,78 +541,8 @@ class Settings:
         return self._localized_settings[lang]
 
     def as_dict(self) -> dict[str, Any]:
-        """Return a dictionary of all fields and extra metadata attributes."""
-        return {
-            k: getattr(self, k)
-            for k in [f.name for f in fields(self)]
-            + list(getattr(self, "__extra_dataclass__attrs__", []))
-        }
-
-    @classmethod
-    def from_settings_file(cls, settings_file: Path, **overrides: dict) -> Settings:
-        """Initialize settings from a settings file.
-
-        Seagull settings are defined in Python files.
-
-        :param settings_file: Path to a settings file.
-        :param overrides: Optional overrides.
-        :return: A new `Settings` object.
-        """
-        module = module_from_spec(
-            spec_from_file_location(settings_file.stem, settings_file)
-        )
-
-        return cls.from_module(module, **overrides)
-
-    @classmethod
-    def from_module(cls, module: ModuleType, **overrides: dict) -> Settings:
-        """Initialize settings from a python module.
-
-        :param module: A settings module.
-        :param overrides: Optional overrides.
-        :return: A new `Settings` object.
-        """
-        # Load the module
-        sys.modules[module.__name__] = module
-        module.__spec__.loader.exec_module(module)
-
-        # Defined settings fields
-        base_fields = [f.name for f in fields(cls) if f != "_extra"]
-
-        def process_setting(dest: dict, extra: dict, key: str, value: object) -> None:
-            if not cls.is_valid_param_key(key):
-                return
-            key = key.lower()
-            if key in base_fields:  # base setting keys
-                dest[key] = value
-            else:  # additional setting keys
-                extra[key] = value
-
-        # Create the initialization context with the module members
-        context = {}
-        extra_context = {}
-        if module:
-            for k, v in getmembers(module):
-                process_setting(context, extra_context, k, v)
-
-        # Update overrides
-        context_overrides = {}
-        extra_overrides = {}
-        for k, v in overrides.items():
-            process_setting(context_overrides, extra_overrides, k, v)
-
-        # Update the context with overrides
-        context.update(context_overrides)
-        extra_context.update(extra_overrides)
-        context.update(extra_context)
-
-        # As this settings instance was created from a file, we record its path
-        context["_settings_path"] = Path(module.__spec__.origin)
-        # Keep track of the overrides
-        context["_overrides"] = context_overrides | extra_overrides
-        # Set the working directory to the settings module directory
-        os.chdir(context["_settings_path"].parent)
-        return cls(**context)
+        """Return a shallow-copy dictionary of all fields."""
+        return {k: getattr(self, k) for k in [f.name for f in fields(self)]}
 
     @classmethod
     def is_valid_param_key(cls, value: str) -> bool:
@@ -643,15 +555,6 @@ class Settings:
         :return: `True` if `value` is a valid parameter key.
         """
         return value.isupper() and not value.startswith("_")
-
-    @property
-    def settings_path(self) -> Path | None:
-        """Getter for the settings path.
-
-        :return: The path of the settings file from which the `Settings` instances comes
-        from, or `None` if it was created programmatically.
-        """
-        return self._settings_path
 
     @property
     def overrides(self) -> dict:

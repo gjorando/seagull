@@ -1,14 +1,16 @@
-from itertools import chain
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import click_extra as clickx
 import watchfiles
 
+from seagull.cli.click import pass_settings
+from seagull.cli.main import main
 from seagull.decorators import timed_execution
 
 if TYPE_CHECKING:
-    from seagull.settings import Settings
+    from seagull import Settings
 
 
 class FileChangeFilter(watchfiles.DefaultFilter):
@@ -24,61 +26,62 @@ class FileChangeFilter(watchfiles.DefaultFilter):
         )
 
 
-class Autoreload:
-    """Re-run seagull everytime a change is detected on the filesystem."""
+def default_watched_files() -> tuple[Path, ...]:
+    """Default watched files."""
+    settings = clickx.get_tool_config(clickx.get_current_context())
+    return settings.settings_path, settings.path, settings.theme
 
-    def __init__(
-        self,
-        settings: Settings,
-        watched_files: Path | list[Path] | None = None,
-    ):
-        """Initialize the autoreload functionality.
 
-        :param settings: Seagull settings.
-        """
-        self.settings = settings
-        if not watched_files:
-            watched_files = [settings.path, settings.theme, settings.settings_path]
-        if not isinstance(watched_files, list):
-            watched_files = [watched_files]
-        watched_files = [Path(p) for p in watched_files]
-        self.watched_files = watched_files
+@main.command("autoreload")
+@clickx.option(
+    "--watch",
+    "-w",
+    "watched_files",
+    type=clickx.path(exists=True),
+    multiple=True,
+    default=default_watched_files,
+    show_default=False,
+    help="Paths to watch for.  [default: settings file, theme path, content path]",
+)
+@pass_settings
+@clickx.pass_obj
+def autoreload(
+    thread_list: list, settings: Settings, watched_files: tuple[Path, ...]
+) -> None:
+    """Rerun seagull each time a modification occurs on the content files."""
 
-    def run(self) -> None:
-        # We create a dummy watchfiles.FileChange tuple to force a first iteration
-        first_change: set[tuple[watchfiles.Change, str]] = {
-            (watchfiles.Change.added, "")
-        }
-        for changed in chain(
-            [first_change],
-            watchfiles.watch(
-                *self.watched_files,
-                watch_filter=FileChangeFilter(ignore_files=self.settings.ignore_files),
-            ),
+    def process() -> None:
+        log_watched_files = ", ".join(
+            f"'{p.relative_to(Path.cwd()) if p.is_relative_to(Path.cwd()) else p}'"
+            for p in watched_files
+        )
+        clickx.echo(f"Autoreload watching for changes in {log_watched_files}.")
+        for changed in watchfiles.watch(
+            *watched_files,
+            watch_filter=FileChangeFilter(ignore_files=settings.ignore_files),
         ):
             # Log the updated files
             changed_files = [Path(p) for _, p in changed]
-            if changed != first_change:
-                cwd = Path.cwd()
-                log_changed_files = ", ".join(
-                    f"'{p.relative_to(cwd) if p.is_relative_to(cwd) else p}'"
-                    for p in changed_files
-                )
-                clickx.echo(f"Modified files: {log_changed_files}. Regenerating...")
-            else:
-                clickx.echo("Generating...")
+            cwd = Path.cwd()
+            log_changed_files = ", ".join(
+                f"'{p.relative_to(cwd) if p.is_relative_to(cwd) else p}'"
+                for p in changed_files
+            )
+            clickx.echo(f"Modified files: {log_changed_files}. Regenerating...")
 
             # Reload the settings if required
-            if self.settings.settings_path in changed_files:
-                self.settings = self.settings.from_settings_file(
-                    self.settings.settings_path, **self.settings.overrides
-                )
+            # FIXME do the settings reload
+            if settings.settings_path in changed_files:
+                clickx.echo("Settings changed, reloading not implemented.")
 
             # Re-run seagull
-            seagull = self.settings.seagull_class(self.settings)
+            seagull = settings.seagull_class(settings)
             timed_run = timed_execution(
                 seagull.run,
                 msg="Generation took {exec_time:.2f} seconds to complete.",
             )
             timed_run()
             clickx.echo("Done!")
+
+    t = threading.Thread(target=process, daemon=True)
+    thread_list.append(t)
