@@ -1,0 +1,19 @@
+[seagull]
+
+author = ""
+sitename = ""
+siteurl = ""
+
+path = ""
+
+timezone = ""
+
+default_lang = "en"
+
+# Feed generation is usually not desired when developing
+feed_types = []
+
+default_pagination = 10
+
+# Uncomment the following line if you want document-relative URLs when developing
+#relative_urls = true

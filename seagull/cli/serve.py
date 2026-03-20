@@ -1,4 +1,5 @@
 import threading
+import webbrowser
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -6,7 +7,7 @@ from typing import TYPE_CHECKING, ClassVar
 import click_extra as clickx
 
 from seagull.cli.click import IPAddressType, pass_output_path
-from seagull.cli.main import main
+from seagull.cli.run import run
 from seagull.log import logger
 
 if TYPE_CHECKING:
@@ -68,7 +69,7 @@ class DevHTTPServer(HTTPServer):
         )
 
 
-@main.command("serve")
+@run.command("serve")
 @clickx.option(
     "--bind",
     "-b",
@@ -84,10 +85,18 @@ class DevHTTPServer(HTTPServer):
     default=8000,
     help="Port for the development HTTP server.",
 )
+@clickx.option(
+    "--open-browser", "-o", is_flag=True, help="Automatically open the web browser."
+)
 @pass_output_path
 @clickx.pass_obj
 def serve(
-    thread_list: list, output_path: Path, address: IPv4Address | IPv6Address, port: int
+    thread_list: list,
+    output_path: Path,
+    address: IPv4Address | IPv6Address,
+    port: int,
+    *,
+    open_browser: bool,
 ) -> None:
     """Run the development HTTP server."""
 
@@ -98,6 +107,10 @@ def serve(
             clickx.get_current_context().fail(f"Couldn't listen on '{address}:{port}'.")
 
         clickx.echo(f"Serving site at 'http://{address}:{port}'.")
+
+        if open_browser:
+            webbrowser.open(f"http://{address}:{port}")
+
         server.serve_forever()
 
     t = threading.Thread(target=process, daemon=True)

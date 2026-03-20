@@ -5,4 +5,4 @@ This overrides the index
 :save_as: index.html
 :url: index.html
 
-Hello.
+Hello people.

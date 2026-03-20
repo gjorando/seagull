@@ -37,6 +37,8 @@ dependencies = [
     #    "pygments>=2.16.1,<2.20.0",
     #    "rich>=13.6.0",
     "watchfiles>=0.24.0",
+    "tzlocal>=5.3.0",
+    "tomlkit>=0.14.0",
     "tzdata; sys_platform == 'win32'",
 ]
 

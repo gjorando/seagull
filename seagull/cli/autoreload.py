@@ -6,7 +6,7 @@ import click_extra as clickx
 import watchfiles
 
 from seagull.cli.click import pass_settings
-from seagull.cli.main import main
+from seagull.cli.run import run
 from seagull.decorators import timed_execution
 
 if TYPE_CHECKING:
@@ -32,7 +32,7 @@ def default_watched_files() -> tuple[Path, ...]:
     return settings.settings_path, settings.path, settings.theme
 
 
-@main.command("autoreload")
+@run.command("autoreload")
 @clickx.option(
     "--watch",
     "-w",
@@ -40,8 +40,8 @@ def default_watched_files() -> tuple[Path, ...]:
     type=clickx.path(exists=True),
     multiple=True,
     default=default_watched_files,
-    show_default=False,
-    help="Paths to watch for.  [default: settings file, theme path, content path]",
+    show_default="settings file, theme path, content path",
+    help="Paths to watch for.",
 )
 @pass_settings
 @clickx.pass_obj

@@ -40,7 +40,7 @@ class Seagull:
         self.context: Context = Context()
 
     def _clear_output_dir(self, *, dry_run: bool = False) -> None:
-        """Delete the output directory according to the retention policy.
+        """Subroutine for the output directory clearing policy.
 
         :param dry_run: If `True`, the files that would be deleted are logged but no
         actual deletion takes place.
@@ -54,9 +54,6 @@ class Seagull:
             else:
                 func(*args, **kwargs)
 
-        # Delete the output directory only if DELETE_OUTPUT_DIRECTORY is True
-        if not self.settings.delete_output_directory:
-            return
         output_path = self.settings.output_path
         # Simply return if the output path doesn't exist yet
         if not output_path.exists():
@@ -77,7 +74,7 @@ class Seagull:
             # But not if the file/directory is in the retention list
             if child.relative_to(output_path) in self.settings.output_retention:
                 logger.debug(
-                    f"'{child.name}' is in 'OUTPUT_RETENTION', won't be deleted."
+                    f"'{child.name}' is in output retention list, won't be deleted."
                 )
                 continue
             # The delete operation is different if we have a directory or a file
@@ -97,6 +94,17 @@ class Seagull:
                     exc_info=logger.level == logging.DEBUG,
                 )
 
+    def clear_output_dir(self) -> None:
+        """Delete the output directory according to the retention policy."""
+        # Don't attempt clearing the output directory if it contains the content dir
+        if self.settings.path.is_relative_to(self.settings.output_path):
+            logger.warning(
+                "The output directory contains the content directory;"
+                " cannot clear the output directory."
+            )
+            return
+        self._clear_output_dir()
+
     def run(self) -> None:
         """Main generation sequence."""
         # Instantiate the generators
@@ -104,14 +112,9 @@ class Seagull:
             gcls(self.settings, self.context) for gcls in self.generator_classes
         ]
 
-        # Don't attempt clearing the output directory if it contains the content dir
-        if self.settings.path.is_relative_to(self.settings.output_path):
-            logger.warning(
-                "The output directory contains the content directory;"
-                " 'DELETE_OUTPUT_DIR' cannot be applied."
-            )
-        else:
-            self._clear_output_dir()
+        # Delete the output directory, only if delete_output_directory is True
+        if self.settings.delete_output_directory:
+            self.clear_output_dir()
 
         # First, we run all generators
         for g in generators:

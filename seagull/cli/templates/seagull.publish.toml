@@ -1,0 +1,8 @@
+["seagull"]
+
+siteurl = ""
+relative_urls = false
+
+feed_types = ["atom"]
+
+delete_output_directory = true

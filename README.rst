@@ -22,7 +22,9 @@ TO-DO
 -----
 
 - [ ] `dates` context attribute(s).
-- [ ] Handle `Settings` directly through the command line with click extra's config option (this would allow to use any config file format, but it would still be useful to allow for a .py settings file; I could extend click extra's config option for this).
+- [X] Handle `Settings` directly through the command line with click extra's config option (this would allow to use any config file format, but it would still be useful to allow for a .py settings file; I could extend click extra's config option for this).
+- [ ] Allow .py config files in click.
+- [ ] Implement setting file overrides for publish configuration.
 - [ ] The handling of exceptions with multi-threading (when using the HTTP server) is broken for now.
 - [ ] In autoreload, do not crash completely upon an exception occurring.
 - [ ] Update a bunch of development files like `CONTRIBUTING.rst`.
@@ -49,7 +51,8 @@ TO-DO
 - [ ] Publish on Pypi?
 - [ ] Deps in tox.ini
 - [ ] What to do with content that doesn't exist in one language.
-- [ ] `import`, `quickstart` and `themes` tools.
+- [X] `quickstart tool.
+- [ ] `import` and `themes` tools.
 - [ ] A tool to convert a Pelican project to a Seagull one?
 - [ ] A shim for compatibility with existing Pelican plugins?
 

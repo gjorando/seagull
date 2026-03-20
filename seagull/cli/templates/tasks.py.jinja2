@@ -1,0 +1,160 @@
+import os
+import shutil
+from functools import partial
+{% if gh_pages %}
+import datetime
+{% endif %}
+
+from typing import TYPE_CHECKING
+
+from invoke.main import program
+from invoke import task
+import click_extra as clickx
+from seagull.cli import run, main
+
+if TYPE_CHECKING:
+    from seagull import Settings
+
+
+def make_click_context(*args):
+    return run.make_context("", list(args), parent=main.make_context("seagull", ["run", *args]))
+
+
+def seagull_run(c, *args):
+    c.run(f"seagull run {program.core.remainder} {' '.join(args)}")
+
+
+# Whether to open the browser when running serve
+OPEN_BROWSER_ON_SERVE = True
+# Base settings file
+SETTINGS_FILE_BASE = "{{ dev_conf }}"
+# Publish settings overrides
+SETTINGS_FILE_PUBLISH = "{{ publish_conf }}"
+# Path for the generated files (loaded from the Seagull settings object) (DO NOT EDIT)
+SEAGULL_SETTINGS: Settings = clickx.get_tool_config(make_click_context("-s", SETTINGS_FILE_BASE))
+DEPLOY_PATH = SEAGULL_SETTINGS.output_path
+# IP and port for `serve`
+DEV_SERVER_IP = "127.0.0.1"
+DEV_SERVER_PORT = "8000"
+# Configuration for the deployment tasks
+DEPLOY_TASKS = {
+{% if ssh %}
+    # Remote server configuration
+    "ssh_user": "{{ ssh.user }}",
+    "ssh_host": "{{ ssh.host }}",
+    "ssh_port": "{{ ssh.port }}",
+    "ssh_path": "{{ ssh.path }}",
+{% endif %}
+{% if gh_pages %}
+    # GitHub Pages configuration
+    "gh_branch": "{{ gh_pages.branch }}",
+    "gh_commit_message": f"Publish site on {datetime.date.today().isoformat()}",
+{% endif %}
+{% if s3 %}
+    # S3 Bucket configuration
+    "s3_bucket": "{{ s3.bucket }}",
+{% endif %}
+{# TODO FTP #}
+}
+
+
+@task
+def clean(c):
+    """Remove generated files."""
+    if os.path.isdir(DEPLOY_PATH):
+        shutil.rmtree(DEPLOY_PATH)
+        os.makedirs(DEPLOY_PATH)
+
+
+@task
+def build(c):
+    """Build local version of site."""
+    seagull_run(c, "-s", SETTINGS_FILE_BASE)
+
+
+@task
+def rebuild(c):
+    """Delete the output path and rebuild."""
+    seagull_run(c, "-d", "-s", SETTINGS_FILE_BASE)
+
+
+@task
+def autoreload(c):
+    """Automatically regenerate site upon file modification."""
+    seagull_run(c, "-s", SETTINGS_FILE_BASE, "autoreload")
+
+
+@task
+def serve(c):
+    """Build, then serve the development server."""
+    open_browser = ("-o",) if OPEN_BROWSER_ON_SERVE else ()
+    seagull_run(c, "-s", SETTINGS_FILE_BASE, "serve", "-b", DEV_SERVER_IP, "-p", DEV_SERVER_PORT, *open_browser)
+
+
+@task
+def preview(c):
+    """Build production version of site."""
+    seagull_run(c, "-s", SETTINGS_FILE_PUBLISH)
+
+
+@task
+def livereload(c):
+    """Automatically reload browser tab upon file modification."""
+    from livereload import Server
+
+    watched_paths = [
+        SETTINGS_FILE_BASE,
+        SEAGULL_SETTINGS.path,
+        SEAGULL_SETTINGS.theme,
+        *SEAGULL_SETTINGS.theme_template_overrides
+    ]
+    seagull_run(c, "-s", SETTINGS_FILE_BASE)
+    server = Server()
+    for path in watched_paths:
+        server.watch(path, partial(seagull_run, c, "-s", SETTINGS_FILE_BASE))
+
+    if OPEN_BROWSER_ON_SERVE:
+        # Open site in default browser
+        import webbrowser
+        webbrowser.open(f"http://{DEV_SERVER_IP}:{DEV_SERVER_PORT}")
+
+    server.serve(host=DEV_SERVER_IP, port=DEV_SERVER_PORT, root=DEPLOY_PATH)
+
+
+{% if ssh %}
+@task
+def publish(c):
+    """Publish to production via rsync."""
+    preview(c)
+    c.run(
+        f'rsync --delete --exclude ".DS_Store" -pthrvz -c '
+        f'-e "ssh -p {DEPLOY_TASKS["ssh_port"]}" {str(DEPLOY_PATH).rstrip("/") + "/"} '
+        f'{DEPLOY_TASKS["ssh_user"]}@{DEPLOY_TASKS["ssh_host"]}:{DEPLOY_TASKS["ssh_path"]}'
+    )
+
+
+{% endif %}
+{% if gh_pages %}
+@task
+def gh_pages(c):
+    """Publish to GitHub Pages."""
+    preview(c)
+    c.run(
+        f"ghp-import -b {DEPLOY_TASKS["gh_branch"]} "
+        f"-m '{DEPLOY_TASKS["gh_commit_message"]}' "
+        f"{DEPLOY_PATH} -p"
+    )
+
+
+{% endif %}
+{% if s3 %}
+@task
+def s3(c):
+    """Publish via S3."""
+    preview(c)
+    c.run(
+        f'aws s3 sync "{DEPLOY_PATH}"/ s3://{DEPLOY_TASKS["s3_bucket"]} --acl public-read --delete'
+    )
+
+
+{% endif %}
