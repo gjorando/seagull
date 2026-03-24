@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from enum import StrEnum, auto
 from itertools import groupby
 import logging
 from operator import attrgetter
@@ -19,6 +20,15 @@ if TYPE_CHECKING:
     from seagull.settings import Settings
 
 
+class GeneratorType(StrEnum):
+    """Type of generator class. Useful for calling order."""
+
+    PRE_CONTENT = auto()
+    CONTENT = auto()
+    POST_CONTENT = auto()
+    STATIC = auto()
+
+
 class Generator[T: SeagullObject](ABC):
     """Abstract base generator class.
 
@@ -26,12 +36,20 @@ class Generator[T: SeagullObject](ABC):
     """
 
     content_class: type[T] = SeagullObject
+    generator_type: GeneratorType | None = None
 
     def __init__(self, settings: Settings, context: Context):
         self.settings = settings
         self.context = context
         # Record generated content
         self.all_content: list[T] = []
+
+    @classmethod
+    def all_generators(cls) -> Iterable[type[Generator]]:
+        """Yield the list of generator subclasses."""
+        for generator in cls.__subclasses__():
+            yield from generator.all_generators()
+            yield generator
 
     def _create_objects(self) -> list[T]:
         """Create the objects.

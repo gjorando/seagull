@@ -23,7 +23,7 @@ def seagull_run(c, *args):
 
 
 # Whether to open the browser when running serve
-OPEN_BROWSER_ON_SERVE = True
+OPEN_BROWSER_ON_SERVE = False
 # Base settings file
 SETTINGS_FILE_BASE = "/Users/gjorando/Projects/seagull/samples/seagull.toml"
 # Publish settings overrides

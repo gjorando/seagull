@@ -1,0 +1,10 @@
+extends = "seagull.toml"
+
+["seagull"]
+
+siteurl = "http://localhost:8000"
+relative_urls = false
+
+feed_types = ["atom"]
+
+delete_output_directory = true

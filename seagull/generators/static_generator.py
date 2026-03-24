@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 from seagull.contents import Static
-from seagull.generators.generator import Generator
+from seagull.generators.generator import Generator, GeneratorType
 from seagull.readers import Reader
 from seagull.writers import Writer
 
@@ -16,7 +16,8 @@ if TYPE_CHECKING:
 class StaticGenerator[T: Static](Generator):
     """Generate static content."""
 
-    content_class = Static
+    content_class: type[T] = Static
+    generator_type: GeneratorType = GeneratorType.STATIC
 
     def __init__(
         self, settings: Settings, context: Context, *, theme_static: bool = False

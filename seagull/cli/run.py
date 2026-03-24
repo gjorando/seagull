@@ -8,6 +8,7 @@ import click_extra as clickx
 from seagull import Settings
 from seagull.cli.click import (
     pass_settings,
+    seagull_config_option,
     seagull_verbose_option,
     seagull_verbosity_option,
     seagull_version,
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
     chain=True,
     config_schema=Settings,
 )
-@clickx.config_option(
+@seagull_config_option(
     "--settings",
     "-s",
     default="seagull.toml",

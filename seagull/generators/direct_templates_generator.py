@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from seagull.contents import DirectTemplate
 from seagull.exceptions import SeagullError
-from seagull.generators.generator import Generator
+from seagull.generators.generator import Generator, GeneratorType
 from seagull.log import logger
 
 if TYPE_CHECKING:
@@ -16,14 +16,15 @@ class DirectTemplatesGenerator[T: DirectTemplate](Generator):
     """Generator for direct templates, such as 'index' or 'categories'."""
 
     content_class: type[T] = DirectTemplate
+    generator_type: GeneratorType = GeneratorType.POST_CONTENT
 
     def _create_objects(self) -> list[T]:
         """Create the objects for each direct template.
 
         This generator works a bit differently from the other ones, as it doesn't use
-        content files to create objects. Instead, it creates one generic seagull object
-        for each template listed in `DIRECT_TEMPLATES`. As such, this generator doesn't
-        use a `Reader` object.
+        content files to create objects. Instead, it creates one seagull object for each
+        template listed in `DIRECT_TEMPLATES`. As such, this generator doesn't use a
+        `Reader` object.
         """
         existing_save_as = [o.save_as for o in self.context]
         all_content = []

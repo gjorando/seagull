@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 from seagull.contents import Article
-from seagull.generators.generator import Generator
+from seagull.generators.generator import Generator, GeneratorType
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -12,6 +12,7 @@ class ArticlesGenerator[T: Article](Generator):
     """Generate article pages."""
 
     content_class: type[T] = Article
+    generator_type: GeneratorType = GeneratorType.CONTENT
 
     @property
     def base_path(self) -> Path:

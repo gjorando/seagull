@@ -1,24 +1,15 @@
+from collections.abc import Iterable
 from functools import partial
 import logging
 import shutil
 from typing import TYPE_CHECKING
 
+from seagull import signals
 from seagull.contents import Content, Taxonomy
 from seagull.contents.content import ObjectStatus
 from seagull.context import Context
-from seagull.generators import (
-    ArticlesGenerator,
-    AuthorsGenerator,
-    CategoriesGenerator,
-    DirectTemplatesGenerator,
-    FeedGenerator,
-    GranularArchivesGenerator,
-    PagesGenerator,
-    StaticGenerator,
-    TagsGenerator,
-)
+from seagull.generators import Generator, GeneratorType, StaticGenerator
 from seagull.log import error_with_paths, logger
-from seagull.signals import initialized
 from seagull.utils import Comparable, PluralFormatter
 
 if TYPE_CHECKING:
@@ -26,7 +17,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from seagull.contents import SeagullObject
-    from seagull.generators import Generator
     from seagull.settings import Settings
 
 
@@ -39,7 +29,8 @@ class Seagull:
         """
         self.settings: Settings = settings
         self.context: Context = Context()
-        initialized.send(self)
+        logger.debug(f"Sent signal '{signals.initialized.name}'(<seagull object>).")
+        signals.initialized.send(self)
 
     def _clear_output_dir(self, *, dry_run: bool = False) -> None:
         """Subroutine for the output directory clearing policy.
@@ -136,9 +127,17 @@ class Seagull:
         for obj in self.context:
             obj.update_intrasite_links(self.context)
 
+        logger.debug(
+            f"Sent signal '{signals.all_generators_finalized.name}'(<generators>)."
+        )
+        signals.all_generators_finalized.send(generators)
+
         # Now, we can write the output to disk
         for g in generators:
             g.generate_output()
+
+        logger.debug(f"Sent signal '{signals.finalized.name}'(<seagull object>).")
+        signals.finalized.send(self)
 
         self._run_stats()
 
@@ -196,21 +195,61 @@ class Seagull:
 
     @property
     def generator_classes(self) -> list[type[Generator]]:
-        """Get the list of generator classes to run."""
-        return [
-            # Taxonomy generators must always come before content generators
-            CategoriesGenerator,
-            AuthorsGenerator,
-            TagsGenerator,
-            # Content generators
-            ArticlesGenerator,
-            PagesGenerator,
-            # FeedGenerator must always come after content generators
-            FeedGenerator,
-            # DirectTemplatesGenerator must always come after content generators
-            DirectTemplatesGenerator,
-            GranularArchivesGenerator,
-            # StaticGenerator must always come last
-            StaticGenerator,
-            partial(StaticGenerator, theme_static=True),
-        ]
+        """Get the list of generator classes to run.
+
+        They are returned in a specific order, explained below.
+        - Pre-content generators include taxonomy generators, which create taxonomies
+          that were explicitly defined.
+        - Content generators are tasked with the main content (articles and pages).
+        - Post-content generators require the content to have been generated, such as
+          the ones that create feeds and archives.
+        - Static generators always come last, so they can collect all remaining static
+          files, as well as the ones explicitly mentioned in content objects.
+        """
+        # GeneratorType is correctly ordered
+        classes = {t: [] for t in GeneratorType}
+
+        # TODO maybe internal generators could self register as plugins do -> could it be interesting to partition this project into internal plugins? Themes could be plugins as well?
+        # Retrieve internal generators
+        for generator in Generator.all_generators():
+            if (gen_type := generator.generator_type) is not None:
+                classes[gen_type].append(generator)
+
+        # Static theme generator
+        classes[GeneratorType.STATIC].append(
+            partial(StaticGenerator, theme_static=True)
+        )
+
+        logger.debug(f"Sent signal '{signals.get_generators.name}'(<seagull object>).")
+        # Retrieve plugin generators
+        for callback, values in signals.get_generators.send(self):
+            callback_name = callback.__module__
+            generators = values if isinstance(values, Iterable) else (values,)
+            for generator in generators:
+                if not isinstance(generator, type):
+                    logger.error(
+                        f"get_generators signal: plugin '{callback_name}' returned an "
+                        f"invalid value ('{generator}' is not a type)."
+                    )
+                    continue
+                if not issubclass(generator, Generator):
+                    logger.error(
+                        f"get_generators signal: plugin '{callback_name}' should "
+                        f"return a generator class (got '{generator.__name__}')."
+                    )
+                    continue
+                if not isinstance(generator.generator_type, GeneratorType):
+                    logger.error(
+                        f"get_generators signal: generator '{generator.__name__}' from "
+                        f"plugin '{callback_name}' has incorrect type "
+                        f"(got '{generator.generator_type}')."
+                    )
+                    continue
+                classes[generator.generator_type].append(generator)
+                logger.debug(
+                    f"get_generators signal: plugin '{callback_name}' "
+                    f"registered generator '{generator.__name__}' "
+                    f"(type: '{generator.generator_type}')."
+                )
+
+        return [gen for gens in classes.values() for gen in gens]

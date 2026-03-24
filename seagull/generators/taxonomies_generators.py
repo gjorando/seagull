@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 from seagull.contents import Author, Category, Tag, Taxonomy
-from seagull.generators.generator import Generator
+from seagull.generators.generator import Generator, GeneratorType
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -38,6 +38,7 @@ class TagsGenerator[T: Tag](TaxonomiesGenerator):
     """The taxonomy generator for tags handles optional filters as well."""
 
     content_class: type[T] = Tag
+    generator_type: GeneratorType = GeneratorType.PRE_CONTENT
 
     def link_translations(self) -> None:
         # Perform the filtering
@@ -51,9 +52,11 @@ class CategoriesGenerator[T: Category](TaxonomiesGenerator):
     """Categories generator."""
 
     content_class: type[T] = Category
+    generator_type: GeneratorType = GeneratorType.PRE_CONTENT
 
 
 class AuthorsGenerator[T: Author](TaxonomiesGenerator):
     """Authors generator."""
 
     content_class: type[T] = Author
+    generator_type: GeneratorType = GeneratorType.PRE_CONTENT

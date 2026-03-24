@@ -3,7 +3,7 @@ import ipaddress
 import logging
 from logging import Logger
 from pathlib import Path
-from typing import TYPE_CHECKING, Concatenate
+from typing import TYPE_CHECKING, Any, Concatenate
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import click_extra as clickx
@@ -13,7 +13,36 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
     from ipaddress import IPv4Address, IPv6Address
 
+    from boltons.urlutils import URL
+
     from seagull.settings import Settings
+
+
+class SeagullConfigOption(clickx.ConfigOption):
+    """A config option that allows for config overrides.
+
+    A root key config `extends` is a configuration path or a list of configuration paths
+    to extend the config file.
+    """
+
+    def read_and_parse_conf(
+        self,
+        pattern: str,
+    ) -> tuple[Path | URL, dict[str, Any]] | tuple[None, None]:
+        path, config = super().read_and_parse_conf(pattern)
+        if extends := config.get("extends"):
+            if isinstance(extends, str):
+                extends = [extends]
+            for extend in extends:
+                _, base_config = super().read_and_parse_conf(extend)
+                config.update(base_config)
+                config = base_config | config
+        return path, config
+
+
+seagull_config_option = decorator_factory(
+    dec=clickx.decorators.option, cls=SeagullConfigOption
+)
 
 
 def seagull_version() -> str:

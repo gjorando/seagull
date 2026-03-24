@@ -2,7 +2,7 @@
 
 author = "John Doe"
 sitename = "Test website"
-siteurl = "http://localhost:8000"
+siteurl = ""
 
 path = "content"
 
@@ -22,11 +22,11 @@ theme_lang = "en"
 
 default_pagination = 10
 
-relative_urls = true
-delete_output_directory = true
-
 plugin_paths = ["./"]
 plugins = ["foo_plugin.FooPlugin"]
+
+relative_urls = true
+delete_output_directory = true
 
 [seagull.langs.fr]
 sitename = "Site de test"

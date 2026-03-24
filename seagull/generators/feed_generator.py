@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from seagull.contents import Feed
 from seagull.exceptions import SeagullError, SkippedFileError
-from seagull.generators.generator import Generator
+from seagull.generators.generator import Generator, GeneratorType
 from seagull.log import logger
 from seagull.writers import FeedWriter
 
@@ -19,6 +19,7 @@ class FeedGenerator[T: Feed](Generator):
     """Generator for ATOM and RSS feeds."""
 
     content_class: type[T] = Feed
+    generator_type: GeneratorType = GeneratorType.POST_CONTENT
 
     def _get_writer(self, obj: T) -> FeedWriter:
         del obj  # Unused argument

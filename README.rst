@@ -28,10 +28,11 @@ The imposter package -> ඞ
 TO-DO
 -----
 
+- [ ] Refactoring: reduce the core code to its minimal aspects, and separate all remaining functionalities into plugins that register their features with plugins.
 - [ ] `dates` context attribute(s).
 - [X] Handle `Settings` directly through the command line with click extra's config option (this would allow to use any config file format, but it would still be useful to allow for a .py settings file; I could extend click extra's config option for this).
 - [ ] Allow .py config files in click.
-- [ ] Implement setting file overrides for publish configuration.
+- [X] Implement setting file overrides for publish configuration.
 - [ ] The handling of exceptions with multi-threading (when using the HTTP server) is broken for now.
 - [ ] In autoreload, do not crash completely upon an exception occurring.
 - [ ] Update a bunch of development files like `CONTRIBUTING.rst`.
@@ -42,7 +43,6 @@ TO-DO
 - [X] reStructuredText's `abbr` tag.
 - [X] RSS and Atom feeds.
 - [X] Granular archives.
-- [ ] Refactoring.
 - [ ] Improve type annotations (for instance, replace `list` with `Sequence`, `dict` with `Mapping`, etc.).
 - [ ] Handling of sorting in the archives: Right now I am enforcing the reverse chronological order in the granular archives, while the general archives keep the article sorting defined in the settings (by virtue of the general archives being a direct template). I think I should unify archives and granular archives (general archives have a "null" granularity), and add a setting for the sorting of archives.
 - [X] Pagination.
