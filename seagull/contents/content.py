@@ -1,6 +1,6 @@
-import re
 from dataclasses import dataclass, field, fields
 from datetime import datetime
+import re
 from typing import TYPE_CHECKING, ClassVar
 
 from bs4 import BeautifulSoup

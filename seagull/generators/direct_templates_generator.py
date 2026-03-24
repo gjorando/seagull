@@ -1,5 +1,5 @@
-import logging
 from itertools import product
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 

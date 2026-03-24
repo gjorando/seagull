@@ -2,8 +2,8 @@ import os
 from platform import python_version
 from typing import TYPE_CHECKING
 
-import click_extra as clickx
 from click import pass_context
+import click_extra as clickx
 
 from seagull import Settings
 from seagull.cli.click import (

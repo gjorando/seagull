@@ -9,6 +9,7 @@ path = "content"
 timezone = "Europe/Paris"
 
 default_lang = "en"
+default_date = "fs"
 locale = "en_US.UTF-8"
 date_format = "%B %d, %Y"
 
@@ -23,6 +24,9 @@ default_pagination = 10
 
 relative_urls = true
 delete_output_directory = true
+
+plugin_paths = ["./"]
+plugins = ["foo_plugin.FooPlugin"]
 
 [seagull.langs.fr]
 sitename = "Site de test"

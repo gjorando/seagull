@@ -1,5 +1,4 @@
 import os
-import shlex
 import shutil
 from functools import partial
 import datetime

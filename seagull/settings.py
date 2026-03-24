@@ -1,8 +1,10 @@
-import gettext
-import locale
 from dataclasses import dataclass, field, fields
+import gettext
 from importlib import import_module
+from importlib.metadata import entry_points
 from itertools import batched, permutations, product
+import locale
+import logging
 from operator import attrgetter
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -14,8 +16,10 @@ from seagull.contents.feed import FeedType
 from seagull.log import logger
 from seagull.utils import (
     PaginationRule,
+    PluginType,
     absolute_from_base_path,
     ensure_paths,
+    find_plugin,
     get_installed_themes_path,
     order_by_factory,
     strftime_jinja_filter,
@@ -24,6 +28,7 @@ from seagull.utils import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from types import ModuleType
     from typing import Any, Self
 
     from jinja2 import BaseLoader
@@ -63,6 +68,7 @@ class Settings:
     author_excludes: list[Path] = field(default_factory=list)
     tag_paths: list[Path] = field(default_factory=lambda: [Path("tags/")])
     tag_excludes: list[Path] = field(default_factory=list)
+    plugins: list[str | ModuleType | PluginType] | None = field(default=None)
     sitename: str = "A Seagull Blog"
     siteurl: str = "/"
     static_paths: list[Path] = field(default_factory=lambda: [Path("images/")])
@@ -71,7 +77,6 @@ class Settings:
     summary_max_paragraphs: int | None = None
     summary_end_suffix: str = "…"
     intrasite_link_regex: str = r"{(?P<what>.*?)}"
-    cache_path: Path = Path("cache")
     formatted_fields: list = field(default_factory=lambda: ["summary"])
     seagull_class: type | str = "seagull.Seagull"
 
@@ -257,6 +262,7 @@ class Settings:
     display_categories_on_menu: bool = True
 
     # Technical fields
+    # FIXME the new click implementation doesn't track the settings path anymore, nor the overrides
     settings_path: Path | None = field(default=None, repr=False)
     _overrides: dict[str, Any] = field(default_factory=dict, repr=False)
     _localized_settings: dict[str, Self] = field(default_factory=dict, repr=False)
@@ -264,13 +270,14 @@ class Settings:
 
     def __post_init__(self) -> None:
         """Parse and normalize various settings."""
-        # Coalesce these relative paths to absolute paths relative to _working_dir,
-        # which is usually the directory where the settings module is
+        # Should we instead make these paths absol
+        # Coalesce these relative paths to absolute paths relative to the settings file
         # All these paths are "base paths", which means they're used as a base for all
         # the other relative path settings (see below)
         # self.theme is also a base path, but it requires special treatment
-        for key in ("path", "output_path", "cache_path", "plugin_paths"):
+        for key in ("path", "output_path", "plugin_paths"):
             value = getattr(self, key)
+            # FIXME use settings_path
             setattr(self, key, absolute_from_base_path(value, Path.cwd()))
         # Ensure relative paths
         self._ensure_relative_paths(
@@ -310,9 +317,59 @@ class Settings:
         self._init_jinja_environment(installed_themes_path)
         # Validate the feed-related settings
         self._validate_feed_settings()
+        # Load plugins
+        self._register_plugins()
         # Finally, register all localized settings; this must always be done last
         for lang in (self.default_lang, *self.langs):
             self.localized_settings(lang)
+
+    def _register_plugins(self) -> None:
+        """Find and register the Seagull plugins."""
+        # First, let's retrieve all installed seagull plugins
+        # FIXME use plugin_paths for installed plugins
+        auto_plugins: dict[str, ModuleType] = {}
+        for entry_point in entry_points(group="seagull.plugin"):
+            plugin: ModuleType = entry_point.load()
+            auto_plugins[plugin.__name__] = plugin
+        # If there is no user-defined list of plugins, load all the auto-discovered ones
+        loaded_plugins: dict[str, ModuleType] = {}
+        if self.plugins is None:
+            loaded_plugins = auto_plugins
+        # Otherwise, use the settings' list of plugins
+        else:
+            for plugin in self.plugins:
+                # If we don't have a name, add the object to our list of plugins
+                if not isinstance(plugin, str):
+                    plugin_name = getattr(plugin, "__qualname__", plugin.name)
+                    loaded_plugins[plugin_name] = plugin
+                    continue
+                # Otherwise let's try finding the plugin by name
+                # First, try getting it from the list of auto-discovered plugins
+                if plugin in auto_plugins:
+                    loaded_plugins[plugin] = auto_plugins[plugin]
+                    continue
+                # Otherwise, assume we have a module or class name
+                try:
+                    loaded_plugin, plugin_name = find_plugin(plugin, self.plugin_paths)
+                    loaded_plugins[plugin_name] = loaded_plugin
+                except ValueError:
+                    logger.exception(
+                        f"Failed to load plugin '{plugin}'.",
+                        exc_info=logger.level == logging.DEBUG,
+                    )
+                    continue
+            self.plugins = list(loaded_plugins.values())
+
+        # Finally, execute the initialization routine for each loaded plugin
+        for plugin_name, plugin in loaded_plugins.items():
+            if not isinstance(plugin, PluginType):
+                logger.error(
+                    f"Plugin '{plugin_name}' doesn't have a `register` "
+                    f"function; cannot initialize."
+                )
+                continue
+            plugin.register()
+            logger.debug(f"Loaded plugin '{plugin_name}'.")
 
     def _ensure_relative_paths(self, *other_keys: str) -> None:
         """Ensure relative path settings are `Path` objects.
@@ -524,6 +581,8 @@ class Settings:
             return self
         # Otherwise, let's try registering a new Settings object specific to this lang
         context = self.as_dict()
+        # No need to load the plugins again
+        context["plugins"] = []
         # We get the overrides from self.langs[lang], and we raise a ValueError if
         # there is no override for this lang; we pop the langs from the context of the
         # localized settings as well

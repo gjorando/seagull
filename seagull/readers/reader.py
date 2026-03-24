@@ -1,8 +1,8 @@
-import re
 from abc import ABC, abstractmethod
 from dataclasses import fields
 from datetime import datetime
 from itertools import chain
+import re
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 from seagull.log import logger

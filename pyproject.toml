@@ -1,10 +1,11 @@
 [project]
-name = "seagull"
+
+name = "seagull-sites"
 authors = [
     { name = "Guillaume Jorandon", email = "guillaume.jorandon.1@ulaval.ca" },
 ]
 description = "An opinionated re-implementation of the Pelican static site generator"
-version = "0.3.0-dev"
+version = "0.4.0-dev"
 license = { text = "AGPLv3" }
 readme = "README.rst"
 keywords = ["static site generator", "static sites", "ssg"]
@@ -12,6 +13,7 @@ classifiers = [
     # "Development Status :: 5 - Production/Stable",
     "Development Status :: 4 - Beta",
     "Environment :: Console",
+    "Framework :: Seagull",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Operating System :: OS Independent",
@@ -27,6 +29,8 @@ classifiers = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "blinker>=1.9.0",
+    "ordered-set>=4.0.0",
     "click-extra>=7.5.0",
     "docutils>=0.22.0",
     "python-slugify>=8.0",
@@ -81,7 +85,7 @@ dev = [
     #    "sphinx>=7.1.2",
     #    "sphinxext-opengraph>=0.9.0",
     #    "furo==2025.9.25",
-    #    "livereload>=2.6.3",
+    "livereload>=2.6.3",
     "pre-commit>=4.5",
     "psutil>=5.9.6",
     "pytest>=7.4.3",
@@ -103,7 +107,8 @@ source-includes = [
     "samples/",
 ]
 excludes = [
-    #    "pelican/build/"
+    #    "pelican/build/",
+    "**/.DS_Store",
 ]
 
 [build-system]
@@ -177,3 +182,8 @@ ignore-overlong-task-comments = true
 [tool.ruff.lint.flake8-annotations]
 
 mypy-init-return = true
+
+[tool.ruff.lint.isort]
+
+combine-as-imports = true
+force-sort-within-sections = true

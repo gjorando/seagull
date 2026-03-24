@@ -1,8 +1,8 @@
-import threading
-import webbrowser
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+import threading
 from typing import TYPE_CHECKING, ClassVar
+import webbrowser
 
 import click_extra as clickx
 

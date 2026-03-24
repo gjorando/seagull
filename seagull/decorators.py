@@ -1,7 +1,6 @@
 import functools
 import time
-from dataclasses import fields
-from typing import TYPE_CHECKING, dataclass_transform
+from typing import TYPE_CHECKING
 
 from seagull.log import logger
 
@@ -40,57 +39,4 @@ def timed_execution(
 
     if func_:
         return decorator(func_)
-    return decorator
-
-
-def extra_dataclass[D](
-    cls_: type[D] | None = None, *, ignore_extra: bool = False
-) -> Callable | type[D]:
-    """Decorator for dataclasses that accept an arbitrary number of extra arguments.
-
-    This decorator must be put before the `dataclass` decorator. This decorator probably
-    won't work with dataclasses who define a custom `__init__` method.
-
-    The decorator adds a class attribute `__extra_dataclass__` set to `True`, so that
-    a dataclass with this decorator can be identified later.
-
-    :param cls_: Dataclass to wrap.
-    :param ignore_extra: Whether to simply ignore extra arguments. If `False`, the
-    decorator adds a `__extra_dataclass__attrs__` tuple attribute to the class. This
-    allows the user to query the list of extra attributes. Extra arguments are stored
-    as attributes in the instance, but they don't become dataclass fields. If `True`,
-    extra arguments are simply ignored.
-    :return: Updated dataclass.
-    """
-
-    @dataclass_transform()
-    def decorator[**P](cls: type[D]) -> type[D]:
-        # Save the base __init__ method
-        base_init = cls.__init__
-        dataclass_fields = {f.name for f in fields(cls)}
-
-        @functools.wraps(base_init)
-        def init_wrapper(self: D, *args: P.args, **kwargs: P.kwargs) -> None:
-            # Accepted field arguments for the dataclass
-            base_kwargs = {k: v for k, v in kwargs.items() if k in dataclass_fields}
-
-            # Call the base __init__
-            base_init(self, *args, **base_kwargs)
-            # If extra arguments aren't simply ignored...
-            if not ignore_extra:
-                extra_kwargs = {
-                    k: v for k, v in kwargs.items() if k not in dataclass_fields
-                }
-                # ... Set extra attributes
-                for k, v in extra_kwargs.items():
-                    setattr(self, k, v)
-                self.__extra_dataclass__attrs__ = tuple(extra_kwargs.keys())
-
-        cls.__init__ = init_wrapper
-        # FIXME a bit hacky, do better
-        cls.__extra_dataclass__ = True
-        return cls
-
-    if cls_:
-        return decorator(cls_)
     return decorator

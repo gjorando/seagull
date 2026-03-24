@@ -110,7 +110,8 @@ class Article(Content):
         **metadata: object | str,
     ) -> Self:
         # Parse the raw publication date if applicable
-        if raw_date := metadata.get("date"):
+        raw_date = metadata.get("date")
+        if raw_date and not isinstance(raw_date, datetime):
             metadata["date"] = datetime.fromisoformat(raw_date)
 
         # We need to know the lang of the article to retrieve the appropriate taxonomy

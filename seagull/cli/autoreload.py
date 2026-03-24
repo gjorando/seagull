@@ -1,5 +1,5 @@
-import threading
 from pathlib import Path
+import threading
 from typing import TYPE_CHECKING
 
 import click_extra as clickx

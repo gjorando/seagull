@@ -1,6 +1,6 @@
+from functools import wraps
 import ipaddress
 import logging
-from functools import wraps
 from logging import Logger
 from pathlib import Path
 from typing import TYPE_CHECKING, Concatenate

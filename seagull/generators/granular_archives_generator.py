@@ -1,6 +1,6 @@
-import logging
 from datetime import date
 from itertools import groupby, product
+import logging
 from operator import attrgetter
 from typing import ClassVar
 

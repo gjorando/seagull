@@ -1,17 +1,16 @@
-import re
 from io import StringIO
 from itertools import chain
+import re
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import docutils
+from docutils import nodes, utils
 import docutils.core
 import docutils.io
-import docutils.readers
-from docutils import nodes, utils
 from docutils.parsers.rst import roles
 from docutils.parsers.rst.languages import get_language
-from docutils.writers.html5_polyglot import HTMLTranslator
-from docutils.writers.html5_polyglot import Writer as HTMLWriter
+import docutils.readers
+from docutils.writers.html5_polyglot import HTMLTranslator, Writer as HTMLWriter
 
 from seagull.log import logger
 from seagull.readers.reader import Reader
@@ -20,10 +19,12 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from pathlib import Path
 
-    from docutils.nodes import abbreviation as docutils_abbr
-    from docutils.nodes import document as docutils_document
-    from docutils.nodes import field_body
-    from docutils.nodes import image as docutils_image
+    from docutils.nodes import (
+        abbreviation as docutils_abbr,
+        document as docutils_document,
+        field_body,
+        image as docutils_image,
+    )
     from docutils.parsers.rst.states import Inliner
 
     from seagull import Settings

@@ -6,10 +6,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import click_extra as clickx
+from jinja2 import Environment, FileSystemLoader
 import tomlkit
 import tomlkit.exceptions
 import tomlkit.items
-from jinja2 import Environment, FileSystemLoader
 from tzlocal import get_localzone
 
 from seagull.cli.click import TimezoneType
@@ -122,7 +122,7 @@ def quickstart(path: Path, title: str, author: str, lang: str) -> None:  # noqa:
 
     toml_seagull["timezone"] = clickx.prompt(
         "What is your timezone?", type=TimezoneType(), default=get_localzone()
-    )
+    ).key
 
     # Generation of the invoke file
     tasks_context = {}

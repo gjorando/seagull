@@ -1,4 +1,12 @@
-from seagull import contents, exceptions, generators, pagination, readers, writers
+from seagull import (
+    contents,
+    exceptions,
+    generators,
+    pagination,
+    readers,
+    signals,
+    writers,
+)
 from seagull.context import Context
 from seagull.intrasite_link_parser import IntrasiteLinkParser
 from seagull.log import logger
@@ -16,5 +24,6 @@ __all__ = [
     "logger",
     "pagination",
     "readers",
+    "signals",
     "writers",
 ]

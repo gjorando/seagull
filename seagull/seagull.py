@@ -1,6 +1,6 @@
+from functools import partial
 import logging
 import shutil
-from functools import partial
 from typing import TYPE_CHECKING
 
 from seagull.contents import Content, Taxonomy
@@ -18,6 +18,7 @@ from seagull.generators import (
     TagsGenerator,
 )
 from seagull.log import error_with_paths, logger
+from seagull.signals import initialized
 from seagull.utils import Comparable, PluralFormatter
 
 if TYPE_CHECKING:
@@ -38,6 +39,7 @@ class Seagull:
         """
         self.settings: Settings = settings
         self.context: Context = Context()
+        initialized.send(self)
 
     def _clear_output_dir(self, *, dry_run: bool = False) -> None:
         """Subroutine for the output directory clearing policy.

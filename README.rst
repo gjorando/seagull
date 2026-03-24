@@ -18,6 +18,13 @@ Ok, Seagull is a fork of Pelican. Pelicans are big water birds, just like seagul
 
 Okay, but seagulls are really cool birds.
 
+Why is the package named `seagull-sites`?
+-----------------------------------------
+
+Because there's `an old PyPI package <https://pypi.org/project/seagull/>`__ that's already named `seagull`. The author published a single release in 2014, refused to elaborate, and left. A chad move, but now I can't use the name `seagull`. :(
+
+The imposter package -> ඞ
+
 TO-DO
 -----
 
@@ -46,7 +53,8 @@ TO-DO
 - [ ] Rich logger.
 - [ ] A testing suite.
 - [ ] Markdown and HTML readers.
-- [ ] Signals and plug-ins.
+- [ ] Signals.
+- [ ] Plug-ins.
 - [ ] Remake github config, readthedocs config.
 - [ ] Publish on Pypi?
 - [ ] Deps in tox.ini

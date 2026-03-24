@@ -1,7 +1,7 @@
-import re
-import urllib.parse
 from pathlib import Path
+import re
 from typing import TYPE_CHECKING, NamedTuple, cast
+import urllib.parse
 from urllib.parse import urlparse, urlunparse
 
 from bs4 import BeautifulSoup

@@ -1,7 +1,7 @@
-import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from itertools import groupby
+import logging
 from operator import attrgetter
 from pathlib import Path
 from typing import TYPE_CHECKING
