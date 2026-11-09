@@ -1,11 +1,26 @@
 import click_extra as clickx
 
+from seagull.cli.utils import (
+    SeagullVerboseOption,
+    SeagullVerbosityOption,
+)
+from seagull.logging import logger
+
 
 @clickx.group(
     "seagull",
-    params=[],
+    params=[
+        clickx.TimerOption(),
+        clickx.AccessibleOption(),
+        clickx.ColorOption(),
+        clickx.NoColorOption(),
+        clickx.ProgressOption(),
+        clickx.TableFormatOption(),
+        SeagullVerbosityOption(default_logger=logger),
+        SeagullVerboseOption(default_logger=logger),
+        clickx.QuietOption(default_logger=logger),
+        clickx.VersionOption(),
+    ],
 )
-@clickx.color_option
-@clickx.version_option
 def main() -> None:
-    """A tool to generate a static blog, with restructured text input files."""
+    """A modular static site generator."""

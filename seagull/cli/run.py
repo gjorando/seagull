@@ -1,138 +1,70 @@
-import os
+from pathlib import Path
 from platform import python_version
-from typing import TYPE_CHECKING
 
-from click import pass_context
+from attrs import fields_dict
 import click_extra as clickx
 
-from seagull import Settings
-from seagull.cli.click import (
-    pass_settings,
-    seagull_config_option,
-    seagull_verbose_option,
-    seagull_verbosity_option,
-    seagull_version,
-)
-from seagull.cli.main import main
-from seagull.decorators import timed_execution
-from seagull.log import logger
+from seagull import Seagull
+from seagull.cli.utils import PyConfigOption, pass_seagull, seagull_run, seagull_version
+from seagull.logging import logger
+from seagull.readers import BaseReader
 
-if TYPE_CHECKING:
-    import threading
+from .main import main
+
+
+def bootstrap_seagull_from_script(config_dict: dict[str, object]) -> Seagull:
+    """Instantiate a Seagull instance from a configuration script."""
+    # Register the readers, falling back to the default reader configuration
+    try:
+        readers = config_dict.pop("readers")
+        readers: list
+        _ = iter(readers)
+    except KeyError:
+        logger.warning("No readers defined in the configuration module.")
+        readers = []
+    except TypeError:
+        raise TypeError("'readers' variable is not iterable") from None
+    for i, reader in enumerate(readers):
+        if not isinstance(reader, BaseReader):
+            raise TypeError(f"'readers[{i}]' variable is not a reader object")
+        reader.registered = True
+
+    # If we have an instance variable, simply use it
+    if instance := config_dict.get("seagull"):
+        if not isinstance(instance, Seagull):
+            raise TypeError("'instance' variable is not a 'Seagull' object")
+        return instance
+    # Otherwise, filter-out invalid keys
+    valid_init_keys = [k for k, v in fields_dict(Seagull).items() if v.init]
+    # TODO put other keys in a Seagull.metadata attribute
+    init_dict = {k: v for k, v in config_dict.items() if k in valid_init_keys}
+    # And instantiate the Seagull object
+    return Seagull(**init_dict)
 
 
 @main.group(
     "run",
     invoke_without_command=True,
-    params=[],
-    chain=True,
-    config_schema=Settings,
-)
-@seagull_config_option(
-    "--settings",
-    "-s",
-    default="seagull.toml",
-    type=clickx.path(exists=True, dir_okay=False),
-    file_format_patterns=[
-        clickx.ConfigFormat.TOML,
-        clickx.ConfigFormat.YAML,
-        clickx.ConfigFormat.JSON,
-        clickx.ConfigFormat.INI,
-        clickx.ConfigFormat.PYPROJECT_TOML,
+    params=[
+        PyConfigOption(
+            config_schema=bootstrap_seagull_from_script,
+        )
     ],
 )
-@clickx.show_params_option
-@clickx.option_group(
-    "Configuration overrides",
-    clickx.option(
-        "--content-path",
-        "path",
-        type=clickx.path(exists=True, file_okay=False),
-        default=".",
-        help="Path where to find the content files.",
-        expose_value=False,
-    ),
-    clickx.option(
-        "--theme-path",
-        "-t",
-        "theme",
-        # TODO exists=True, resolving the theme path
-        type=clickx.path(exists=False, file_okay=False),
-        default=None,
-        help="Path where to find the theme templates.",
-        expose_value=False,
-    ),
-    clickx.option(
-        "--output",
-        "-o",
-        "output_path",
-        type=clickx.path(file_okay=False),
-        default="output",
-        help="Where to output the generated files.",
-        expose_value=False,
-    ),
-    clickx.option(
-        "--delete-output-directory",
-        "-d",
-        "delete_output_directory",
-        is_flag=True,
-        default=False,
-        help="Delete the output directory.",
-        expose_value=False,
-    ),
-    clickx.option(
-        "--relative-urls",
-        "relative_urls",
-        is_flag=True,
-        default=False,
-        help="Use relative urls in output, useful for site development.",
-        expose_value=False,
-    ),
-)
-@seagull_verbosity_option(default_logger=logger)
-@seagull_verbose_option(default_logger=logger)
-@pass_settings
-@pass_context
-def run(ctx: clickx.Context, settings: Settings) -> None:
-    """Generate a seagull static site."""
-    # Prevent running the command if a chain command asked for the help page
-    if any(
-        help_opt in ctx.meta["click_extra.raw_args"]
-        for help_opt in ctx.help_option_names
-    ):
-        return
-
-    # The object stores subcommand threads
-    ctx.ensure_object(list)
-
-    # Paths are all relative to the configuration file
-    # FIXME fix paths explicitly set in the command line or environment, they are relative to the user's cwd, not the settings path
-    cwd = settings.settings_path.parent
-    os.chdir(cwd)
-
+@pass_seagull
+@clickx.pass_context
+def run(ctx: clickx.Context, seagull: Seagull) -> None:
+    """Generate a Seagull static site."""
     # Some debug information
+    settings_path = Path(ctx.meta[clickx.context.CONF_SOURCE]).relative_to(
+        Path.cwd(),
+        walk_up=True,
+    )
     logger.debug(f"Seagull version {seagull_version()}.")
     logger.debug(f"Python version {python_version()}.")
-    logger.debug(f"Settings sourced from '{settings.settings_path}'.")
-
-    # And we run Seagull
-    # FIXME handle failure in both single run and autoreload
-    seagull = settings.seagull_class(settings)
-    clickx.echo("Generating...")
-    timed_run = timed_execution(
-        seagull.run,
-        msg="Generation took {exec_time:.2f} seconds to complete.",
+    logger.debug(f"Settings file: '{settings_path}'.")
+    seagull_run(
+        seagull,
+        progress=bool(ctx.meta[clickx.context.PROGRESS]),
+        timer=clickx.context.START_TIME in ctx.meta,
     )
-    timed_run()
-    clickx.echo("Done!")
-
-
-# FIXME type annotation of pass_settings is not good
-@run.result_callback()
-@clickx.pass_obj
-def run_threads(thread_list: list[threading.Thread], *_: None) -> None:
-    """Wait for the subcommand threads to finish running."""
-    for t in thread_list:
-        t.start()
-    for t in thread_list:
-        t.join()

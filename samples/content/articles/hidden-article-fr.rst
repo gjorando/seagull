@@ -1,0 +1,13 @@
+Un article caché
+################
+
+:slug: hidden-article
+:date: 2020-01-05
+:lang: fr
+:tags: foo
+:status: hidden
+
+Ceci est un article caché.
+
+.. image:: seagull:filename:/images/fat_cat.jpg
+    :alt: Cette image est exclusive à la traduction française!

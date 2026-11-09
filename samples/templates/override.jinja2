@@ -1,0 +1,13 @@
+{% extends "!simple/page.jinja2" %}
+
+{% block content %}
+    <article>
+        <header>
+            <h2>{{ obj.name }} -- INDEX</h2>
+        </header>
+
+        {% import '!simple/utils/translations.jinja2' as translations with context %}
+        {{ translations.list_translations(page) }}
+        {{ obj.content }}
+    </article>
+{% endblock content %}

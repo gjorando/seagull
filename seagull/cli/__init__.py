@@ -1,7 +1,9 @@
-from seagull.cli.autoreload import autoreload
-from seagull.cli.main import main
-from seagull.cli.quickstart import quickstart
-from seagull.cli.run import run
-from seagull.cli.serve import serve
+from .main import main
+from .run import run
+from .serve import serve
 
-__all__ = ["autoreload", "main", "quickstart", "run", "serve"]
+__all__ = [
+    "main",
+    "run",
+    "serve",
+]

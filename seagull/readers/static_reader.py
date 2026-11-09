@@ -1,25 +1,35 @@
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING
 
-from seagull.exceptions import InvalidObjectError
-from seagull.readers import Reader
+from attrs import define
+
+from seagull.objects import BaseObject
+
+from .base_reader import BaseReader
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from seagull.typeshed import StrPath
 
 
-class StaticReader(Reader):
-    """Static files reader class.
+@define
+class StaticReader[T: BaseObject](BaseReader):
+    """Reader for static data."""
 
-    Static files aren't actually loaded in memory, but the reader returns a `Static`
-    object nonetheless.
-    """
+    def _parse_raw_data(self, text_or_bytes: str | bytes) -> dict[str, str | list[str]]:
+        del text_or_bytes  # Unused argument
+        # A static asset doesn't parse any content
+        return {}
 
-    # None indicates this reader is suitable for static files
-    file_extensions: ClassVar[list[str | None]] = [None]
+    def __call__(
+        self,
+        object_class: type[T],
+        source_path: StrPath,
+        /,
+        *,
+        default_values: dict[str, object] | None = None,
+    ) -> T:
+        default_values = default_values or {}
+        default_values.setdefault("name", source_path)
+        default_values.setdefault("source_path", source_path)
 
-    def _parse_data(self, path: Path) -> tuple[str, dict[str, Any]]:
-        # A static file must exist in order to be valid
-        if not path.exists():
-            raise InvalidObjectError(f"Static file '{path}' doesn't exist.")
-        metadata = {"title": path.stem}
-        return "", metadata
+        # The static parser doesn't read a file, it simply records its source path
+        return self.loads(object_class, "", default_values=default_values)

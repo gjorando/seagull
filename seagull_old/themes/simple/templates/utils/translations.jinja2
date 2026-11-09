@@ -1,0 +1,17 @@
+{# TODO could be loaded into the jinja globals/filters through the theme instead #}
+{% macro list_translations(entry) %}
+    {% if entry.translations %}
+        {{ _("Translations:") }}
+        {% for translation in entry.translations %}
+            <a href="{{ site_root }}/{{ translation.url }}" hreflang="{{ translation.lang }}">{{ translation.lang }}</a>
+        {% endfor %}
+    {% endif %}
+{% endmacro %}
+
+{% macro list_translation_head(entry) %}
+    {% if entry.translations %}
+        {% for translation in entry.translations %}
+            <link rel="alternate" hreflang="{{ translation.lang }}" href="{{ site_root }}/{{ translation.url }}">
+        {% endfor %}
+    {% endif %}
+{% endmacro %}

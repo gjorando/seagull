@@ -4,7 +4,7 @@ name = "seagull-sites"
 authors = [
     { name = "Guillaume Jorandon", email = "guillaume.jorandon.1@ulaval.ca" },
 ]
-description = "An opinionated re-implementation of the Pelican static site generator"
+description = "A static site generator, loosely based on Pelican."
 version = "0.4.0-dev"
 license = { text = "AGPLv3" }
 readme = "README.rst"
@@ -18,7 +18,7 @@ classifiers = [
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Internet :: WWW/HTTP :: Dynamic Content :: Content Management System",
     "Topic :: Internet :: WWW/HTTP :: Site Management",
@@ -29,9 +29,8 @@ classifiers = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "blinker>=1.9.0",
     "ordered-set>=4.0.0",
-    "click-extra>=7.5.0",
+    "click-extra>=8.2.0",
     "docutils>=0.22.0",
     "python-slugify>=8.0",
     "BeautifulSoup4>=4.14",
@@ -39,10 +38,12 @@ dependencies = [
     "MarkupSafe>=2.0.0",
     "jinja2>=3.1.2",
     #    "pygments>=2.16.1,<2.20.0",
-    #    "rich>=13.6.0",
+    "rich>=15.0.0",
     "watchfiles>=0.24.0",
+    "attrs>=26.1",
     "tzlocal>=5.3.0",
     "tomlkit>=0.14.0",
+    "babel>=2.18.0",
     "tzdata; sys_platform == 'win32'",
 ]
 
@@ -62,6 +63,16 @@ seagull = "seagull.cli:main"
 #pelican-plugins = "pelican.plugins._utils:list_plugins"
 #pelican-quickstart = "pelican.tools.pelican_quickstart:main"
 #pelican-themes = "pelican.tools.pelican_themes:main"
+
+#[project.entry-points."seagull.plugin"]
+#core = "seagull.core:CoreSpec"
+#pages = "seagull.pages:PagesSpec"
+#static = "seagull.static:StaticSpec"
+#rest_files = "seagull.restructured_text:ReStructuredTextSpec"
+#html = "seagull.html:HTMLSpec"
+#direct_templates = "seagull.direct_templates:DirectTemplatesSpec"
+#pagination = "seagull.pagination:PaginationSpec"
+#articles = "seagull.articles:ArticlesSpec"
 
 #[tool.autopub]
 #project-name = "Seagull"
@@ -117,7 +128,7 @@ build-backend = "pdm.backend"
 
 [tool.ruff]
 
-extend-exclude = ["./tasks.py", "./docs/", "./samples/"]
+extend-exclude = ["./tasks.py", "./docs/", "./samples/", "./seagull_old"]
 
 [tool.ruff.lint]
 
@@ -187,3 +198,8 @@ mypy-init-return = true
 
 combine-as-imports = true
 force-sort-within-sections = true
+
+[tool.ruff.lint.flake8-bugbear]
+
+extend-immutable-calls = [
+]

@@ -1,87 +1,36 @@
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from importlib.machinery import PathFinder
-from importlib.util import find_spec, module_from_spec
+from datetime import datetime
+from importlib import import_module
+from importlib.util import find_spec
 import locale
+import logging
 from pathlib import Path
-from string import Formatter
-import sys
-from typing import TYPE_CHECKING, NamedTuple, Protocol, runtime_checkable
+import re
+import shutil
+from typing import TYPE_CHECKING, ClassVar, Self
+import urllib.parse
 
-from seagull.log import logger
+from attrs import define, field, validators
+
+from seagull.logging import logger
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator, Sized
-    from datetime import datetime
-    from types import ModuleType
+    from collections.abc import Callable, Generator, Sequence
 
-    from seagull.contents import SeagullObject
+    from bs4 import Tag
 
-
-class Comparable[T](Protocol):
-    """Protocol for annotating comparable types."""
-
-    @abstractmethod
-    def __lt__(self: T, other: T, /) -> bool: ...
+    from seagull.typeshed import (
+        JinjaContext,
+        StrPath,
+    )
 
 
-@runtime_checkable
-class PluginType[T](Protocol):
-    """Protocol for annotating plugin classes."""
-
-    @abstractmethod
-    def register(self) -> None: ...
-
-
-class PaginationRule(NamedTuple):
-    """Pagination rule for the paginator."""
-
-    min_page: int
-    url: str
-    save_as: str
-
-
-def get_installed_themes_path() -> Path | None:
-    """Retrieve the directory where installed themes are stored.
-
-    :return: The path for installed themes, or `None` if it couldn't be found.
-    """
-    result = None
-    if seagull_spec := find_spec(__package__):
-        # the installed themes are stored in <seagull package>/themes/
-        package_dir = Path(seagull_spec.origin).parent
-        result = package_dir / "themes"
-    if not (result and result.exists()):
-        result = None
-        logger.warning(
-            "Couldn't find the installed themes path: 'simple' and "
-            "the other installed themes won't be available."
-        )
-    return result
-
-
-def ensure_paths(p: Path | str | list[Path | str]) -> Path | list[Path]:
-    """Ensure a path-like or list of path-like uses `pathlib.Path`."""
-    if isinstance(p, list):
-        return [Path(v) for v in p]
-    return Path(p)
-
-
-def strftime_jinja_filter(date: datetime, date_format: str, locale_: str = "") -> str:
-    """A locale aware date-formatter for Jinja.
-
-    :param date: `datetime` object to format.
-    :param date_format: Format string.
-    :param locale_: Locale to use. If empty, it uses the currently defined locale for
-    `LC_TIME`.
-    :return: Formatted `datetime` using `strftime`.
-    """
-    if not locale_:
-        locale_ = locale.setlocale(locale.LC_TIME)
-    # on OSX, encoding from LC_CTYPE determines the Unicode output
-    # So make sure it's same as LC_TIME
-    with temporary_locale(locale_, (locale.LC_TIME, locale.LC_CTYPE)):
-        return date.strftime(date_format)
+def subclasses[T](cls: type[T]) -> Generator[type[T]]:
+    """Yield all subclasses."""
+    for sub_cls in cls.__subclasses__():
+        yield sub_cls
+        yield from subclasses(sub_cls)
 
 
 @contextmanager
@@ -98,7 +47,6 @@ def temporary_locale(
     if not isinstance(lc_category, tuple):
         lc_category = [lc_category]
     orig_locales = {lcc: locale.setlocale(lcc) for lcc in lc_category}
-
     # Change the desired locale categories, then enter the context manager
     for lcc in lc_category:
         locale.setlocale(lcc, temp_locale)
@@ -108,128 +56,251 @@ def temporary_locale(
         locale.setlocale(lcc, orig_locales[lcc])
 
 
-def order_by_factory(
-    value: str,
-) -> tuple[Callable[[SeagullObject], Comparable], bool]:
-    """Convert an `*_ORDER_BY` setting to a key function and `reverse` parameter.
+def load_object_from_module(value: str, default_module: str | None = None) -> object:
+    """Load an object from an import path.
 
-    See [the Python documentation](https://docs.python.org/3/howto/sorting.html)
-    for details about key functions.
-
-    :return: A function that takes a seagull object and return a value for sorting; a
-    boolean that tells whether to reverse the sorting order.
+    :param value: Either an absolute or relative import path for an object. If
+    `default_module` is set, it can also be the name of an object in `default_module`.
+    :param default_module: Optional default module to use.
+    :return: A loaded object.
     """
-    # Whether to reverse the sorting order
-    reverse = False
-    if value.startswith("reversed-"):
-        value = value.replace("reversed-", "", 1)
-        reverse = True
-    # Special case basename: order by filename
-    if value == "basename":
-
-        def key_func(obj: SeagullObject) -> Comparable:
-            if obj.source_path:
-                return obj.source_path.name
-            return obj.title
-    # Otherwise, sort by a given metadata key
-    else:
-
-        def key_func(obj: SeagullObject) -> object:
-            return getattr(obj, value)
-
-    return key_func, reverse
+    mod, _, generator_class = value.rpartition(".")
+    if default_module and not mod:
+        mod = default_module
+    try:
+        return getattr(import_module(mod), generator_class)
+    except ValueError as e:
+        raise ValueError("No default module for object '{generator_class}'") from e
+    except AttributeError as e:
+        raise ValueError(
+            f"'{generator_class}': unknown object in module '{mod}'"
+        ) from e
+    except ModuleNotFoundError as e:
+        raise ValueError(
+            f"'{mod}': unknown module for object '{generator_class}'"
+        ) from e
 
 
-def absolute_from_base_path(
-    paths: Path | str | list[Path | str], base: Path
-) -> Path | list[Path]:
-    """Ensure a path or list of paths is absolute.
+def object_class_converter(
+    *,
+    default_module: str | None = None,
+) -> Callable[[type | str], type]:
+    """Converter to resolve types when passed as strings.
 
-    :param paths: `Path` or list of `Path` objects.
-    :param base: Base path for relative paths to be turned absolute.
-    :return: `Path` or list of `Path` objects, ensured to be absolute.
+    :param default_module: Optional default module to use (see
+    `seagull.utils.load_object_from_module`).
+    :return: A converter function that ensure we resolve a type name.
     """
 
-    def _absolute_from_base_path(o: Path) -> Path:
-        return o if o.is_absolute() else (base / o).resolve()
+    def _converter(value: type | str) -> type:
+        if isinstance(value, str):
+            if not isinstance(
+                result := load_object_from_module(value, default_module), type
+            ):
+                raise ValueError(f"'{value}' must be a type")
+            return result
+        return value
 
-    paths = ensure_paths(paths)
-    if isinstance(paths, Path):
-        return _absolute_from_base_path(paths)
-    return [_absolute_from_base_path(o) for o in paths]
+    return _converter
 
 
-class PluralFormatter(Formatter):
-    """A small helper class to format pluralized strings in a Python f-string.
+def datetime_converter(value: str | datetime) -> datetime:
+    """Converter for `datetime` fields.
 
-    Format spec looks like this: `"plural,"val1[,val2[,val3]]`.
-    - If only `val1` is defined, it gives a replacement if the value is not 1.
-    - If `val2` is defined as well, `val1` gives a replacement if the value is 1. `val2`
-    gives a replacement otherwise.
-    - If `val3` is defined as well, it gives a replacement if the value is greater than
-    one, `val2` if the value is 1, and `val1` otherwise.
+    :param value: The value to convert. If it's a string, it is parsed using
+    `fromisoformat`.
+    :return: A `datetime` object.
+    """
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(value)
 
-    This works on integer, and objects which define a `__len__` method.
 
-    Based on https://tobywf.com/2015/12/sane-pluralisation/.
+def path_repr_func(
+    *, resolve: bool = False, quotes: str = "'", none_fallback: str = "None"
+) -> Callable[[Path], str]:
+    """Create a function that can be used to represent a path.
+
+    This is used primarily for the `repr` parameter of the `attrs.field` function.
+
+    :param resolve: Whether to resolve the path.
+    :param quotes: Character to use around the path representation.
+    :param none_fallback: If the value can be `None`, defines a default return value.
+    :return: A function that takes a path and returns its string representation.
     """
 
-    def format_field(self, value: int | Sized, format_spec: str) -> str:
-        if format_spec.startswith("plural,"):
-            replacement_specs = format_spec.split(",")[1:]
-            replacement_values = [""] * 3
-            match len(replacement_specs):
-                case 1:
-                    replacement_values[0] = replacement_values[2] = replacement_specs[0]
-                case 2:
-                    replacement_values[0] = replacement_values[2] = replacement_specs[1]
-                    replacement_values[1] = replacement_specs[0]
-                case 3:
-                    replacement_values = replacement_specs
-                case _:
-                    raise ValueError(f"Invalid pluralizer format '{format_spec}'.")
-            # If the value is not int, we try to assume it has a length, and use it
-            if not isinstance(value, int):
-                value = len(value)
+    def _func(value: Path | None) -> str:
+        if value is None:
+            return none_fallback
+        if resolve:
+            value = value.resolve()
+        return f"{quotes}{value}{quotes}"
 
-            if value > 1:
-                return replacement_values[2]
-            if value == 1:
-                return replacement_values[1]
-            return replacement_values[0]
-        return super().format_field(value, format_spec)
+    return _func
 
 
-def find_plugin(
-    plugin_name: str, plugin_paths: list[str | Path]
-) -> tuple[ModuleType | PluginType, str]:
-    """Helper function that tries to import a plugin module or class.
+def installed_themes_path() -> Path | None:
+    """Retrieve the directory where installed themes are stored.
 
-    :param plugin_name: Name of the plugin we want to load.
-    :param plugin_paths: Additional paths where to look for plugins.
-    :return: The plugin (either a module or a class) and the plugin name.
-    :raise ValueError: If the plugin couldn't be found.
+    :return: The path for installed themes, or `None` if it couldn't be found.
     """
-    # importlib functions require a string object
-    plugin_paths = [str(p) for p in plugin_paths]
-    cls_name = ""
-    plugin_spec = PathFinder.find_spec(plugin_name, plugin_paths + sys.path)
-    # If we can't find the plugin spec, let's assume we have a plugin class
-    if not plugin_spec:
-        plugin_package, _, cls_name = plugin_name.rpartition(".")
-        plugin_spec = PathFinder.find_spec(plugin_package, plugin_paths + sys.path)
-    # If we still don't have a plugin_spec at this point, raise an exception
-    if not plugin_spec:
-        raise ValueError(f"Cannot find plugin '{plugin_name}'.")
-    plugin_module = sys.modules.setdefault(
-        # If the plugin is already in sys.modules, simply use this
-        plugin_spec.name,
-        # Otherwise, load it from its specs, and add it to sys.modules
-        module_from_spec(plugin_spec),
+    result = None
+    if (seagull_spec := find_spec(__package__)) and seagull_spec.origin:
+        # the installed themes are stored in <seagull package>/themes/
+        package_dir = Path(seagull_spec.origin).parent
+        result = package_dir / "themes"
+    if not (result and result.exists()):
+        result = None
+        logger.warning(
+            "Couldn't find the installed themes path: 'simple' and "
+            "the other installed themes won't be available."
+        )
+    return result
+
+
+def resolve_theme_path(value: str | StrPath) -> Path:
+    """Ensure a theme value is an existing theme path.
+
+    :param value: Path to a theme, or name of an installed theme.
+    :return: Resolved path to said theme, if it exists.
+    :raise ValueError: If the path doesn't exist.
+    """
+    result = Path(value)
+    if result.exists():
+        return result
+    base_theme_path = installed_themes_path()
+    if not (base_theme_path and (result := base_theme_path / value).exists()):
+        raise ValueError(f"'{value}': not a valid theme.")
+    return result
+
+
+class JinjaRenderable(ABC):
+    """Mixin for objects that can be rendered in Jinja."""
+
+    @property
+    @abstractmethod
+    def jinja_context(self) -> JinjaContext:
+        """Rendering context that the object adds."""
+
+
+def clear_directory(
+    path: Path,
+    retention_paths: Sequence[str | Path] | None = None,
+    *,
+    file_okay: bool = False,
+) -> list[Path]:
+    """Clear a directory in order to populate it again.
+
+    This function ensures `path` exists by the end of its normal execution.
+
+    :param path: Path to clear.
+    :param retention_paths: Paths, relative to `path`, to preserve from deletion.
+    :param file_okay: If `True`, delete `path` if it's a file.
+    :return: List of paths relative to `path` that were effectively kept because of the
+    retention policy.
+    :raise RuntimeError: If `path` is a file and `file_okay` is `False`.
+    """
+    # Simply create the directory if it doesn't exist yet
+    if not path.exists():
+        path.mkdir()
+        return []
+    # Try removing a file if path is a file and file_okay == True
+    if not path.is_dir():
+        if not file_okay:
+            raise RuntimeError(f"Cannot clear {path}, as it is a file.")
+        try:
+            path.unlink()
+        except OSError:
+            logger.exception(
+                f"Unable to delete the file '{path}'.",
+                exc_info=logger.level == logging.DEBUG,
+            )
+        path.mkdir()
+        return []
+
+    # Otherwise, clear the output path contents
+    # Ensure retention_paths is a list of paths
+    retention_paths = [Path(p) for p in (retention_paths or [])]
+    retained_paths = []
+    for child in path.iterdir():
+        # But not if the file/directory is in the retention paths
+        if (rel_child := child.relative_to(path)) in retention_paths:
+            retained_paths.append(rel_child)
+            continue
+        # Try to delete the child
+        try:
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        except OSError:
+            child_dir = child.relative_to(path.parent)
+            logger.exception(
+                f"Unable to delete '{child_dir}'.",
+                exc_info=logger.level == logging.DEBUG,
+            )
+    return retained_paths
+
+
+@define
+class IntrasiteLink:
+    """A representation of an intrasite link.
+
+    Intrasite links are essentially URNs, apart from the fact that the NSS portion
+    (Namespace-Specific String, corresponding to the target of the link) can contain any
+    character (the RFC8141 restricts the NSS to a limited subset of characters). The
+    actual implementation of how to convert the intrasite link is up to the seagull
+    object. The scheme part is `seagull:`.
+    """
+
+    SCHEME_NAME: ClassVar[str] = "seagull"
+    """Name of the scheme."""
+    LINK_ATTRS: ClassVar[tuple[str, ...]] = (
+        "href",
+        "src",
+        "poster",
+        "data",
+        "cite",
+        "formaction",
+        "action",
+        "content",
     )
-    # Now, let's load our module
-    plugin_spec.loader.exec_module(plugin_module)
-    # return the plugin class if we have one, or the module directly
-    if plugin_class := getattr(plugin_module, cls_name, None):
-        return plugin_class, plugin_class.__qualname__
-    return plugin_module, plugin_module.__name__
+    """HTML attributes that can contain an intrasite link."""
+
+    identifier: str = field(
+        validator=validators.matches_re(
+            r"^[a-z0-9][a-z0-9\-]{1,31}$", flags=re.IGNORECASE
+        ),
+        converter=lambda x: x.lower().strip(),
+    )
+    """Identifier for the type of intrasite link (NID of the URN)."""
+    target: str = field(
+        default="",
+        # Convert %xx escapes back to Unicode
+        converter=lambda x: urllib.parse.unquote(x.strip()),
+    )
+    """Intrasite target(NSS of the URN, allowing leading slashes)."""
+    tag: Tag = field(kw_only=True, repr=False)
+    """HTML tag associated with the intrasite link."""
+    attr: str = field(kw_only=True, repr=False)
+    """HTML attribute in `tag` where the intrasite link resides."""
+
+    @classmethod
+    def from_string(cls, raw_urn: str, tag: Tag, attr: str) -> Self:
+        """Create a new `URN` object.
+
+        :param raw_urn: Raw URN string.
+        :param tag: Optional HTML tag.
+        :param attr: Optional attribute.
+        :return: A parsed `URN` object.
+        """
+        scheme, *remainder = raw_urn.split(":", 2)
+        if scheme != cls.SCHEME_NAME or not remainder:
+            raise ValueError("Invalid URN string")
+        return cls(*remainder, tag=tag, attr=attr)
+
+    def __str__(self) -> str:
+        return (
+            f"{self.SCHEME_NAME}:{self.identifier}"
+            f"{f':{self.target}' if self.target else ''}"
+        )

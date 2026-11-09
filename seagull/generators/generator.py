@@ -1,249 +1,214 @@
-from abc import ABC, abstractmethod
 from collections import defaultdict
-from enum import StrEnum, auto
-from itertools import groupby
 import logging
-from operator import attrgetter
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from seagull.contents import SeagullObject
+from attrs import define, field
+
 from seagull.exceptions import InvalidObjectError, SkippedFileError
-from seagull.log import logger, warning_with_paths
-from seagull.readers import Reader
-from seagull.writers import Writer
+from seagull.logging import logger
+from seagull.objects import BaseObject
+from seagull.readers import BaseReader
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from seagull.context import Context
-    from seagull.settings import Settings
+    from attrs import Attribute
 
 
-class GeneratorType(StrEnum):
-    """Type of generator class. Useful for calling order."""
+@define(kw_only=True)
+class Generator[T: BaseObject]:
+    """Default generator class."""
 
-    PRE_CONTENT = auto()
-    CONTENT = auto()
-    POST_CONTENT = auto()
-    STATIC = auto()
+    object_class: type[T] = field()
+    """Type of object created by the generator."""
+    valid_paths: set[Path | str] = field(
+        converter=lambda paths: {Path(p) for p in paths}
+    )
+    """Valid path patterns to look for files.
 
+    These patterns are relative to a content path provided in the `__call__` method."""
+    excludes: set[Path | str] = field(
+        factory=set, converter=lambda paths: {Path(p) for p in paths}
+    )
+    """Ignored paths (relative to base_path)."""
+    enabled: bool = field(default=True, repr=False)
+    """Whether to enable the generator."""
 
-class Generator[T: SeagullObject](ABC):
-    """Abstract base generator class.
+    @object_class.validator
+    def _attrs_object_class_validator(self, attribute: Attribute, value: type) -> None:
+        if not (isinstance(value, type) and issubclass(value, BaseObject)):
+            raise ValueError(
+                f"'{attribute.name}' must be a subtype of 'seagull.objects.BaseObject'"
+            )
 
-    A `Generator` object is dedicated to generating a specific type of object.
-    """
+    def __call__(
+        self,
+        content_path: Path,
+        processed_paths: dict[Path, bool] | None = None,
+        /,
+        *,
+        default_values: dict[str, object] | None = None,
+    ) -> list[T]:
+        """Generate all the objects.
 
-    content_class: type[T] = SeagullObject
-    generator_type: GeneratorType | None = None
-
-    def __init__(self, settings: Settings, context: Context):
-        self.settings = settings
-        self.context = context
-        # Record generated content
-        self.all_content: list[T] = []
-
-    @classmethod
-    def all_generators(cls) -> Iterable[type[Generator]]:
-        """Yield the list of generator subclasses."""
-        for generator in cls.__subclasses__():
-            yield from generator.all_generators()
-            yield generator
-
-    def _create_objects(self) -> list[T]:
-        """Create the objects.
-
-        :return: A list of generated seagull objects.
+        :param content_path: Base path to use as the content path.
+        :param processed_paths: If provided, a dictionary mapping processed source paths
+        to whether they were successfully processed.
+        :param default_values: Default field values for the generated object.
+        :return: The list of generated objects. If the generator is disabled, an empty
+        list is returned.
         """
-        all_content = []
-        for source_path in self.files:
-            log_path = source_path.relative_to(self.base_path.parent)
-            # Parse the file
-            try:
-                obj: T = self._get_reader(source_path).read_file(
-                    source_path,
-                    self.content_class,
-                    self.context,
-                    base_path=self.base_path,
-                )
-            except SkippedFileError as e:
-                # If the file was skipped, continue with the next file
-                if logger.level == logging.DEBUG:
-                    logger.exception(e, exc_info=True)
-                logger.info(f"Skipped '{log_path}'.")
-                continue
-            except InvalidObjectError:
-                # If the file is invalid, log the error and continue with the next file
-                logger.exception(
-                    f"Couldn't process '{log_path}'.",
-                    exc_info=logger.level == logging.DEBUG,
-                )
-                # We also mark the source path as failed
-                self._add_failed_to_context(source_path)
-                continue
-            all_content.append(obj)
-        return all_content
+        if not self.enabled:
+            return []
+        if processed_paths is None:
+            processed_paths = {}
+        default_values = default_values or {}
+        objects = []
+        # First, we create the objects; we do not attempt to process source
+        # paths that were already processed or failed by another generator
+        for source_path in self.files(content_path).difference(processed_paths):
+            obj, success = self._generate_object(
+                content_path,
+                source_path,
+                default_values=default_values,
+            )
+            # Add the object to the list of generated objects
+            if obj:
+                objects.append(obj)
+            # Record the source_path depending on whether generation was successful
+            processed_paths[source_path] = success
+        return objects
 
-    def _get_reader(self, source_path: Path) -> Reader:
-        """Retrieve the appropriate reader, given a source path.
+    def _generate_object(
+        self,
+        base_path: Path,
+        source_path: Path,
+        /,
+        *,
+        default_values: dict[str, object],
+    ) -> tuple[T | None, bool]:
+        """Subroutine that generates an object based on a source path.
 
-        :param source_path: Source path of the file to parse.
-        :return: A `Reader` instance.
+        :param base_path: Base path to use as the content path.
+        :param source_path: Object source path to be fed to the parser (relative to
+        `base_path`).
+        :param default_values: Default field values for the generated object.
+        :return: The object (or `None` if nothing was created), and a boolean on whether
+        the processing was successful. `(None, True)` may be returned if the source path
+        was skipped.
         """
-        return Reader.from_extension(source_path.suffix)(self.settings)
+        # Pick the appropriate reader
+        try:
+            reader = self._get_reader(source_path.suffix)
+        except ValueError:
+            logger.warning(f"No suitable reader for '{source_path}'.")
+            return None, False
+        # ... Then parse the file
+        try:
+            obj = reader(
+                self.object_class,
+                base_path / source_path,
+                default_values={"base_path": base_path} | default_values,
+            )
+            logger.debug(
+                f"Processed '{base_path / source_path}' into "
+                f"{self.object_class.printable_name()} '{obj.name}'."
+            )
+            return obj, True
+        # If the file was skipped, return no object but mark the
+        # source path as successfully processed
+        except SkippedFileError:
+            logger.info(f"Skipped '{source_path}'.")
+            return None, True
+        # If the file is invalid, return no object and mark the
+        # source path as failed
+        except InvalidObjectError:
+            logger.exception(
+                f"Couldn't process '{source_path}'.",
+                exc_info=logger.level == logging.DEBUG,
+            )
+            return None, False
 
-    def _get_writer(self, obj: T) -> Writer:
-        """Retrieve the appropriate writer for an object.
-
-        :param obj: Seagull object to write.
-        :return: A `Writer` instance.
-        """
-        return Writer.from_extension(obj.save_as.suffix)(self.settings)
-
-    def _add_failed_to_context(self, source_path: Path) -> None:
-        """Record a source file path that a generator failed to process.
-
-        :param source_path: Source path.
-        """
-        self.context.failed_source_paths.add(source_path)
-
-    def _update_context(self, objs: list[T]) -> None:
-        """Update the shared context.
-
-        :param objs: Objects to register in the context.
-        """
-        for obj in objs:
-            # Record the file into the context
-            self.add_object_to_context(obj)
-            # Record the static links in the object as well
-            self.context.static_links |= obj.static_links
-
-    def add_object_to_context(self, obj: T) -> None:
-        """Add an object to the shared context.
-
-        :param obj: Content to store.
-        """
-        self.context.objects[self.content_class].append(obj)
-
-    def link_translations(self) -> None:
-        """Link translations."""
-        objs = self.all_content
-        # Link translations together
-        for obj in objs:
-            obj.link_translations(objs)
-
-        # Sanity check: warn of items with the same slug and lang
-        dupe_getter = attrgetter("slug", "lang")
-        for (slug, lang), items in groupby(sorted(objs, key=dupe_getter), dupe_getter):
-            if (items_count := len(list(items))) > 1:
-                warning_with_paths(
-                    f"There are {items_count} items with slug "
-                    f"'{slug}' and lang '{lang}'.",
-                    paths=[o.source_path for o in items],
-                )
-
-    def generate_context(self) -> None:
-        """Create the context of a generator.
-
-        The default implementation calls `_create_objects` and `_update_context`.
-        """
-        # First, we create the objects
-        self.all_content.extend(self._create_objects())
-        # Then, we update the context
-        self._update_context(self.all_content)
-
-    def generate_output(self) -> None:
-        """Generate the output of a generator."""
-        obj: T
-        for obj in self.all_content:
-            writer = self._get_writer(obj)
-            writer.write_file(obj, self.context)
-
-    def has_valid_extension(self, path: Path) -> bool:
-        """Verify that a file has a valid extension for the current generator.
-
-        :param path: Path of the file to verify.
-        :return: `True` if the file has a valid extension.
-        """
-        # The default implementation checks if there exists a reader for the file
-        # extension
-        return path.suffix[1:] in (
-            extension
-            for reader in Reader.all_readers()
-            for extension in reader.file_extensions
-        )
-
-    @property
-    def files(self) -> set[Path]:
+    def files(
+        self,
+        base_path: Path,
+        ignore_patterns: Iterable[Path | str] | None = None,
+    ) -> set[Path]:
         """Set of file paths that should be parsed.
 
+        :param base_path: Base path to use as the content path.
+        :param ignore_patterns: Optional ignore patterns.
         :return: A set of absolute paths.
         """
+        # By default, we do not walk into hidden directories that
+        # aren't explicitly set in self.valid_paths
+        if ignore_patterns is None:
+            ignore_patterns = ["**/.*"]
+        ignore_patterns = set(ignore_patterns)
         result = set()
-        ignores = self.settings.ignore_files
-        # Resolve relative paths relatively to the base path
-        base_path = self.base_path
         # Group excluded paths by parent
         per_parent_exclude_paths = defaultdict(set)
-        for ep in self.excluded_paths:
+        for ep in self.excludes:
             excluded_path = base_path / ep
             per_parent_exclude_paths[excluded_path.parent].add(excluded_path.name)
+        # Go through each valid path for the generator
         for vp in self.valid_paths:
             valid_path = base_path / vp
-            if valid_path.is_dir(follow_symlinks=True):  # Walk directories
+            # If the valid path is a directory, walk it
+            if valid_path.is_dir(follow_symlinks=True):
                 for current_directory, subdirectories, filenames in valid_path.walk(
                     follow_symlinks=True
                 ):
-                    # Do not walk into subdirectories that are excluded paths
+                    # We remove from the walk subdirs that are excluded by self.excludes
                     excluded_subdirs = per_parent_exclude_paths[current_directory]
                     for subdir in reversed(subdirectories):
-                        # Do not walk into globally ignored subdirectories
+                        # We do not walk into globally ignored subdirs either
                         globally_ignored = any(
-                            Path(subdir).full_match(pattern) for pattern in ignores
+                            Path(subdir).full_match(pattern)
+                            for pattern in ignore_patterns
                         )
                         if subdir in excluded_subdirs or globally_ignored:
                             subdirectories.remove(subdir)
-                    rel_directory = current_directory.relative_to(self.base_path)
-                    # Add each absolute file path, if it is not a globally ignored file,
-                    # and if it has a valid extension
+                    rel_directory = current_directory.relative_to(base_path)
+                    # Add each source path, if it is not a globally
+                    # ignored file, and if it has a valid extension
                     for filename in filenames:
-                        file_path = current_directory / filename
                         # The pattern matching is done relatively to the base path
                         rel_path = rel_directory / filename
                         globally_ignored = any(
-                            rel_path.full_match(pattern) for pattern in ignores
+                            rel_path.full_match(pattern) for pattern in ignore_patterns
                         )
-                        if not globally_ignored and self.has_valid_extension(file_path):
-                            result.add(file_path)
+                        if not globally_ignored and self._is_valid_extension(
+                            rel_path.suffix
+                        ):
+                            result.add(rel_path)
             elif valid_path.exists():  # Directly add a single file if it exists
-                result.add(valid_path)
+                result.add(vp)
         return result
 
-    @property
-    @abstractmethod
-    def valid_paths(self) -> Iterable[Path]:
-        """A property that yields the valid paths to look for files.
+    def _get_reader(self, extension: str | None) -> BaseReader:
+        """Get the reader that should be used for a given extension.
 
-        :return: An iterable of paths relative to `self.base_path`.
+        This is used by `Generator.__call__` to get the appropriate reader object.
+
+        :param extension: Extension of the file to verify.
+        :return: A `BaseReader` instance.
+        :raise ValueError: If there is no reader for the extension.
         """
+        return BaseReader.from_extension(extension)
 
-    @property
-    @abstractmethod
-    def excluded_paths(self) -> Iterable[Path]:
-        """A property that yields the ignored paths.
+    def _is_valid_extension(self, extension: str) -> bool:
+        """Verify that an extension is valid for the current generator.
 
-        :return: An iterable of paths relative to `self.base_path`.
+        This is used by `Generator.files` to assert if a file should be included.
+
+        :param extension: Extension of the file to verify.
+        :return: `True` if the file has a valid extension.
         """
-
-    @property
-    @abstractmethod
-    def base_path(self) -> Path:
-        """Base path for the generator to look into.
-
-        :return: A path that's used as the base for all files processed by the
-        generator.
-        """
-
-    def __str__(self) -> str:
-        return self.__class__.__name__
+        # The base generator accepts any extension associated to a reader
+        try:
+            self._get_reader(extension)
+            return True
+        except KeyError:
+            return False

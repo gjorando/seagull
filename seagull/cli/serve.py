@@ -1,72 +1,22 @@
-from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
-import threading
-from typing import TYPE_CHECKING, ClassVar
-import webbrowser
+from typing import TYPE_CHECKING
 
 import click_extra as clickx
+from livereload import Server
 
-from seagull.cli.click import IPAddressType, pass_output_path
-from seagull.cli.run import run
-from seagull.log import logger
+from seagull.cli.utils import (
+    IPAddressType,
+    PyConfigOption,
+    default_watched_files,
+    seagull_run,
+)
+from seagull.logging import PluralFormatter, debug_with_paths
+
+from .run import run
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from ipaddress import IPv4Address, IPv6Address
-
-
-class DevHTTPRequestHandler(SimpleHTTPRequestHandler):
-    """Request handler for the development HTTP server."""
-
-    extensions_map: ClassVar[dict[str, str]] = {
-        **SimpleHTTPRequestHandler.extensions_map,
-        ".oft": "font/oft",
-        ".sfnt": "font/sfnt",
-        ".ttf": "font/ttf",
-        ".woff": "font/woff",
-        ".woff2": "font/woff2",
-    }
-
-    def translate_path(self, path: str) -> str:
-        original_path = Path(path)
-        # Try multiple candidates for a raw path
-        candidate_paths = [
-            # Add .html to the name if it exists
-            *((original_path.with_suffix(".html"),) if original_path.name else ()),
-            # Or assume the path is a directory and try to get its index
-            original_path / "index.html",
-            # Or try the original path as is
-            original_path,
-        ]
-        for candidate in candidate_paths:
-            translated_path = Path(super().translate_path(str(candidate)))
-            if translated_path.exists():
-                return str(translated_path)
-        log_candidates = ", ".join(f"'{p}'" for p in candidate_paths)
-        logger.warning(f"Unable to find '{path}' or variations:\n{log_candidates}")
-        return ""
-
-    def log_message(self, msg_format: str, *args: list) -> None:
-        logger.info(msg_format, *args)
-
-
-class DevHTTPServer(HTTPServer):
-    """Development HTTP server."""
-
-    allow_reuse_address: bool = True
-
-    def __init__(self, address: str, port: int, output_path: Path):
-        """Initialize the development server
-
-        :param address: Address to listen to.
-        :param port: Port to listen on.
-        :param output_path: Path to serve.
-        """
-        super().__init__(
-            server_address=(address, port),
-            RequestHandlerClass=lambda req, addr, server: DevHTTPRequestHandler(
-                req, addr, server, directory=output_path
-            ),
-        )
 
 
 @run.command("serve")
@@ -86,32 +36,85 @@ class DevHTTPServer(HTTPServer):
     help="Port for the development HTTP server.",
 )
 @clickx.option(
+    "--watch",
+    "-w",
+    "watched_files",
+    type=clickx.path(exists=True),
+    multiple=True,
+    default=default_watched_files,
+    show_default="settings file, theme path, content path, template overrides",
+    help="Paths to watch for.",
+)
+@clickx.option(
     "--open-browser", "-o", is_flag=True, help="Automatically open the web browser."
 )
-@pass_output_path
-@clickx.pass_obj
+@clickx.pass_context
 def serve(
-    thread_list: list,
-    output_path: Path,
+    ctx: clickx.Context,
     address: IPv4Address | IPv6Address,
     port: int,
+    watched_files: tuple[Path, ...],
     *,
     open_browser: bool,
 ) -> None:
-    """Run the development HTTP server."""
+    """Run the development HTTP server.
 
-    def process() -> None:
-        try:
-            server = DevHTTPServer(str(address), port, output_path)
-        except OSError:
-            clickx.get_current_context().fail(f"Couldn't listen on '{address}:{port}'.")
+    The server automatically re-runs seagull when it detects content updates.
+    """
+    config_path: Path = Path(ctx.meta[clickx.context.CONF_SOURCE])
 
-        clickx.echo(f"Serving site at 'http://{address}:{port}'.")
+    def make_callback(watched: Path) -> Callable[[], None]:
+        def callback() -> None:
+            # The context must have a parent
+            if not isinstance(ctx.parent, clickx.Context):
+                return
+            clickx.echo()
+            # If the settings were changed, try to find the config option from the
+            # parent command and use it to reload the settings object
+            if watched.samefile(config_path):
+                # We look for the PyConfigOption param of the parent ('run') command
+                for param in ctx.parent.command.params:
+                    if isinstance(param, PyConfigOption):
+                        clickx.echo(
+                            "Reloading the settings file and re-generating the site..."
+                        )
+                        # Reload the configuration
+                        param.load_conf(ctx.parent, param, config_path)
+                        break
+                else:
+                    clickx.echo("Couldn't reload the settings.", err=True)
+                    return
+            else:
+                clickx.echo("Detected changes, re-generating the site...")
+            # We re-run Seagull
+            seagull_run(
+                clickx.get_tool_config(ctx),
+                progress=bool(ctx.meta[clickx.context.PROGRESS]),
+                timer=clickx.context.START_TIME in ctx.meta,
+            )
 
-        if open_browser:
-            webbrowser.open(f"http://{address}:{port}")
+        return callback
 
-        server.serve_forever()
+    clickx.echo(f"Serving site at 'http://{address}:{port}'...")
+    debug_with_paths(
+        PluralFormatter().format(
+            "Watching {len_paths} path{paths:plural,s}.",
+            paths=watched_files,
+            len_paths=len(watched_files),
+        ),
+        paths=watched_files,
+    )
 
-    t = threading.Thread(target=process, daemon=True)
-    thread_list.append(t)
+    server = Server()
+    for watched_file in watched_files:
+        server.watch(str(watched_file), make_callback(watched_file))
+
+    try:
+        server.serve(
+            host=str(address),
+            port=port,
+            root=clickx.get_tool_config(ctx).output_path,
+            open_url_delay=0.5 if open_browser else None,
+        )
+    except OSError as e:
+        ctx.fail(f"Couldn't listen on '{address}:{port}' ({e}).")
